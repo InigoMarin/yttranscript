@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.5.0"
+__version__ = "1.5.1"
 
 import argparse
 import os
@@ -99,9 +99,32 @@ def copy_to_clipboard(text: str) -> bool:
     return False
 
 
+DEFAULT_CONFIG = """\
+# yttranscript configuration
+# Uncomment and edit the lines below to set your defaults.
+# CLI flags always override these values.
+
+# lang = "es"
+# format = "txt"
+# whisper_model = "base"
+# whisper_device = "gpu"
+# whisper_dir = "/home/user/.cache/whisper"
+"""
+
+
+def ensure_config_dir() -> None:
+    """Create config directory and default config file on first run."""
+    config_dir = CONFIG_PATH.parent
+    if not config_dir.exists():
+        config_dir.mkdir(parents=True, exist_ok=True)
+    if not CONFIG_PATH.exists():
+        CONFIG_PATH.write_text(DEFAULT_CONFIG, encoding="utf-8")
+
+
 def load_config() -> dict:
     """Load config from ~/.config/yttranscript/config.toml."""
-    if tomllib is None or not CONFIG_PATH.exists():
+    ensure_config_dir()
+    if tomllib is None:
         return {}
     try:
         with open(CONFIG_PATH, "rb") as f:
@@ -617,6 +640,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    ensure_config_dir()
     parser = build_parser()
     args = parser.parse_args()
 
