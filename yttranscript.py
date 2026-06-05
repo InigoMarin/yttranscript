@@ -5,6 +5,8 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
+__version__ = "1.1.0"
+
 import argparse
 import os
 import re
@@ -427,7 +429,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "url",
+        nargs="?",
         help="YouTube video URL (e.g. https://www.youtube.com/watch?v=...)",
+    )
+    parser.add_argument(
+        "-V", "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
         "-o", "--output",
@@ -480,6 +488,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+
+    if not args.url:
+        parser.error("a YouTube URL is required")
 
     try:
         process_video(
