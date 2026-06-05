@@ -58,6 +58,10 @@ yttranscript URL --format json --chunk-size 60 --stdout | python ingest.py
 yttranscript URL --summarize
 yttranscript URL --summarize --summarize-cmd "llama-cli -m model.gguf --temp 0.7"
 
+# Start web UI (browser interface)
+yttranscript --serve
+yttranscript --serve --port 9090
+
 # Custom output filename
 yttranscript URL -o my_transcript
 
@@ -109,6 +113,8 @@ yttranscript URL --keep-vtt --keep-audio
 | `--summarize` | Pipe transcript to external AI command for summarization |
 | `--summarize-cmd` | Command to pipe transcript to (config: `summarize_cmd`) |
 | `--summarize-prompt` | Prompt prepended to transcript (config: `summarize_prompt`) |
+| `--serve` | Start local web UI at `http://localhost:PORT` |
+| `--port` | Port for web UI (default: 8080) |
 | `-V, --version` | Show version |
 
 ### Whisper Models
@@ -147,6 +153,21 @@ Check your current config:
 ```bash
 yttranscript --show-config
 ```
+
+## Web UI
+
+Start a local web interface:
+
+```bash
+yttranscript --serve
+# → open http://localhost:8080 in your browser
+```
+
+Features:
+- Paste YouTube URL and transcribe from the browser
+- Select language, format (txt/json/vtt), timestamps, summarize
+- Download results directly from the browser
+- Runs on localhost only (no external access)
 
 ## Dependencies
 

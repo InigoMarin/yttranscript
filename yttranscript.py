@@ -5,9 +5,10 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.12.0"
+__version__ = "1.13.0"
 
 import argparse
+import io
 import json
 import os
 import re
@@ -15,6 +16,9 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
+import urllib.parse
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 try:
@@ -676,6 +680,226 @@ def summarize_text(text: str, cmd: str, prompt: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Web server
+# ---------------------------------------------------------------------------
+
+WEB_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>yttranscript</title>
+<style>
+  :root { --bg: #0f0f0f; --surface: #1a1a2e; --accent: #7c3aed; --text: #e2e8f0; --muted: #94a3b8; --ok: #22c55e; --err: #ef4444; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; justify-content: center; padding: 2rem; }
+  .container { max-width: 800px; width: 100%; }
+  h1 { font-size: 1.5rem; margin-bottom: 1.5rem; color: var(--accent); }
+  .card { background: var(--surface); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; }
+  input[type="text"] { width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #334155; background: #0f0f0f; color: var(--text); font-size: 1rem; }
+  input[type="text"]:focus { outline: none; border-color: var(--accent); }
+  .row { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; align-items: center; }
+  select, input[type="checkbox"] { accent-color: var(--accent); }
+  select { padding: 0.5rem; border-radius: 6px; background: #0f0f0f; color: var(--text); border: 1px solid #334155; }
+  label { font-size: 0.875rem; color: var(--muted); display: flex; align-items: center; gap: 0.25rem; }
+  button { padding: 0.75rem 2rem; border-radius: 8px; border: none; background: var(--accent); color: white; font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+  button:hover { opacity: 0.85; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  #status { margin-top: 1rem; font-size: 0.875rem; color: var(--muted); }
+  #result { white-space: pre-wrap; font-family: monospace; font-size: 0.875rem; line-height: 1.6; max-height: 60vh; overflow-y: auto; }
+  .error { color: var(--err); }
+  .ok { color: var(--ok); }
+  #download-row { display: none; margin-top: 0.75rem; gap: 0.5rem; }
+  .spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>&#9733; yttranscript</h1>
+  <div class="card">
+    <input type="text" id="url" placeholder="Paste YouTube URL..." />
+    <div class="row">
+      <label>Lang <select id="lang"><option value="">Auto</option><option value="en">en</option><option value="es">es</option><option value="fr">fr</option><option value="de">de</option><option value="pt">pt</option><option value="it">it</option><option value="ja">ja</option></select></label>
+      <label>Format <select id="format"><option value="txt">txt</option><option value="json">json</option><option value="vtt">vtt</option></select></label>
+      <label><input type="checkbox" id="timestamps"> Timestamps</label>
+      <label><input type="checkbox" id="summarize"> Summarize</label>
+    </div>
+    <div class="row">
+      <button id="btn" onclick="run()">Transcribe</button>
+      <div id="download-row">
+        <a id="download-link" download><button onclick="document.getElementById('download-link').click()">Download</button></a>
+      </div>
+    </div>
+    <div id="status"></div>
+  </div>
+  <div class="card" id="output-card" style="display:none;">
+    <div id="result"></div>
+  </div>
+</div>
+<script>
+async function run() {
+  const url = document.getElementById('url').value.trim();
+  if (!url) return;
+  const btn = document.getElementById('btn');
+  const status = document.getElementById('status');
+  const result = document.getElementById('result');
+  const outputCard = document.getElementById('output-card');
+  const dlRow = document.getElementById('download-row');
+  btn.disabled = true;
+  status.innerHTML = '<span class="spinner"></span> Processing...';
+  result.textContent = '';
+  outputCard.style.display = 'none';
+  dlRow.style.display = 'none';
+  const params = new URLSearchParams({ url });
+  if (document.getElementById('lang').value) params.set('lang', document.getElementById('lang').value);
+  params.set('format', document.getElementById('format').value);
+  if (document.getElementById('timestamps').checked) params.set('timestamps', '1');
+  if (document.getElementById('summarize').checked) params.set('summarize', '1');
+  try {
+    const res = await fetch('/api?' + params);
+    const data = await res.json();
+    if (data.error) {
+      status.innerHTML = '<span class="error">' + data.error + '</span>';
+    } else {
+      status.innerHTML = '<span class="ok">' + data.title + '</span>';
+      outputCard.style.display = 'block';
+      result.textContent = data.text;
+      if (data.download) {
+        dlRow.style.display = 'flex';
+        document.getElementById('download-link').href = data.download;
+      }
+    }
+  } catch (e) {
+    status.innerHTML = '<span class="error">Request failed: ' + e.message + '</span>';
+  }
+  btn.disabled = false;
+}
+document.getElementById('url').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+</script>
+</body>
+</html>"""
+
+
+class TranscriptHandler(BaseHTTPRequestHandler):
+    """HTTP request handler for the web UI."""
+
+    def log_message(self, fmt, *args):
+        if VERBOSITY >= 2:
+            super().log_message(fmt, *args)
+
+    def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+
+        if parsed.path == "/" or parsed.path == "/index.html":
+            self._serve_html()
+        elif parsed.path == "/api":
+            self._serve_api(parsed.query)
+        elif parsed.path.startswith("/download/"):
+            self._serve_download(parsed.path[len("/download/"):])
+        else:
+            self.send_error(404)
+
+    def _serve_download(self, filename):
+        cache_dir = Path.home() / ".cache" / "yttranscript"
+        filepath = cache_dir / urllib.parse.unquote(filename)
+        if not filepath.exists():
+            self.send_error(404)
+            return
+        content_type = "application/json" if filename.endswith(".json") else "text/plain"
+        self.send_response(200)
+        self.send_header("Content-Type", f"{content_type}; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.end_headers()
+        self.wfile.write(filepath.read_bytes())
+
+    def _serve_html(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(WEB_HTML.encode("utf-8"))
+
+    def _serve_api(self, query_string):
+        params = urllib.parse.parse_qs(query_string)
+        url = params.get("url", [None])[0]
+        if not url:
+            self._json_response({"error": "Missing url parameter"})
+            return
+
+        lang = params.get("lang", [None])[0]
+        fmt = params.get("format", ["txt"])[0]
+        timestamps = params.get("timestamps", ["0"])[0] == "1"
+        summarize = params.get("summarize", ["0"])[0] == "1"
+
+        buf = io.StringIO()
+        original_stdout = sys.stdout
+
+        try:
+            sys.stdout = buf
+            process_video(
+                url=url,
+                fmt=fmt,
+                lang=lang,
+                timestamps=timestamps,
+                summarize=summarize,
+                summarize_cmd=resolve_value(None, load_config(), "summarize_cmd"),
+                summarize_prompt=resolve_value(None, load_config(), "summarize_prompt"),
+                stdout_mode=True,
+            )
+            text = buf.getvalue()
+        except SystemExit:
+            text = buf.getvalue()
+        except Exception as e:
+            self._json_response({"error": str(e)})
+            return
+        finally:
+            sys.stdout = original_stdout
+
+        title = "transcript"
+        try:
+            title = get_video_title(url)
+        except Exception:
+            pass
+
+        download = None
+        if fmt == "json":
+            safe_title = re.sub(r'[/?:"<>|*]', "-", title)
+            download_path = Path.home() / ".cache" / "yttranscript" / f"{safe_title}.json"
+            download_path.parent.mkdir(parents=True, exist_ok=True)
+            download_path.write_text(text, encoding="utf-8")
+            download = f"/download/{urllib.parse.quote(safe_title)}.json"
+        elif fmt == "txt":
+            safe_title = re.sub(r'[/?:"<>|*]', "-", title)
+            download_path = Path.home() / ".cache" / "yttranscript" / f"{safe_title}.txt"
+            download_path.parent.mkdir(parents=True, exist_ok=True)
+            download_path.write_text(text, encoding="utf-8")
+            download = f"/download/{urllib.parse.quote(safe_title)}.txt"
+
+        self._json_response({"title": title, "text": text, "download": download})
+
+    def _json_response(self, data):
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def run_server(port: int) -> None:
+    """Start the local web server."""
+    server = HTTPServer(("127.0.0.1", port), TranscriptHandler)
+    success(f"Web UI: http://localhost:{port}")
+    success("Press Ctrl-C to stop.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print()
+        warn("Server stopped.")
+        server.server_close()
+
+
+# ---------------------------------------------------------------------------
 # Main logic
 # ---------------------------------------------------------------------------
 
@@ -1051,6 +1275,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Prompt prepended to transcript before piping (default: config summarize_prompt).",
     )
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Start local web UI (http://localhost:PORT).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port for web UI (default: 8080).",
+    )
     return parser
 
 
@@ -1085,8 +1320,12 @@ def main() -> None:
     if args.show_config:
         show_config()
 
+    if args.serve:
+        run_server(args.port)
+        return
+
     if not args.url:
-        parser.error("a YouTube URL is required")
+        parser.error("a YouTube URL is required (or use --serve for web UI)")
 
     config = load_config()
 
