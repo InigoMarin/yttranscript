@@ -547,8 +547,10 @@ def process_video(
             info("Available subtitles:")
             run(["yt-dlp", "--list-subs", url], check=False)
 
-        # Strategy: try manual (lang variants) → auto (lang variants) → whisper
+        # Strategy: try manual (lang variants → en fallback) → auto (same) → whisper
         lang_variants = get_lang_variants(lang)
+        if lang.split("-")[0] != "en":
+            lang_variants.extend(get_lang_variants("en"))
         downloaded = False
 
         for variant in lang_variants:
