@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 import argparse
 import os
@@ -14,6 +14,25 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+try:
+    import tomllib
+except ImportError:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        tomllib = None
+
+CONFIG_PATH = Path.home() / ".config" / "yttranscript" / "config.toml"
+
+DEFAULTS = {
+    "lang": None,
+    "format": "txt",
+    "whisper_model": "base",
+    "whisper_device": "gpu",
+    "whisper_dir": None,
+    "output": None,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +97,40 @@ def copy_to_clipboard(text: str) -> bool:
                 return False
     warn("No clipboard tool found. Install one of: wl-copy, xclip, xsel")
     return False
+
+
+def load_config() -> dict:
+    """Load config from ~/.config/yttranscript/config.toml."""
+    if tomllib is None or not CONFIG_PATH.exists():
+        return {}
+    try:
+        with open(CONFIG_PATH, "rb") as f:
+            return tomllib.load(f)
+    except Exception as e:
+        warn(f"Could not parse config file ({CONFIG_PATH}): {e}")
+        return {}
+
+
+def resolve_value(arg_value, config: dict, key: str):
+    """Resolve a value: CLI arg > config > default."""
+    if arg_value is not None:
+        return arg_value
+    return config.get(key, DEFAULTS.get(key))
+
+
+def detect_video_language(url: str) -> str | None:
+    """Detect video language using yt-dlp. Returns None if detection fails."""
+    result = run(
+        ["yt-dlp", "--print", "%(language)s", url],
+        capture=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    lang = result.stdout.strip()
+    if not lang or lang == "NA":
+        return None
+    return lang
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +415,16 @@ def process_video(
         list_subs(url)
         return
 
+    # Auto-detect language if not specified
+    if lang is None:
+        info("Auto-detecting video language...")
+        lang = detect_video_language(url)
+        if lang:
+            success(f"Detected language: {lang}")
+        else:
+            lang = "en"
+            warn("Could not detect language, falling back to English (en).")
+
     # Determine output name
     if output:
         video_title = output
@@ -500,13 +563,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-f", "--format",
         choices=["txt", "vtt"],
-        default="txt",
-        help="Output format (default: txt)",
+        default=None,
+        help="Output format (default: txt, config: format)",
     )
     parser.add_argument(
         "--lang",
-        default="en",
-        help="Subtitle language code (default: en)",
+        default=None,
+        help="Subtitle language code (default: auto-detect, config: lang)",
     )
     parser.add_argument(
         "--list-subs",
@@ -521,18 +584,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--whisper-model",
         choices=["tiny", "base", "small", "medium", "large"],
-        default="base",
-        help="Whisper model size (default: base)",
+        default=None,
+        help="Whisper model size (default: base, config: whisper_model)",
     )
     parser.add_argument(
         "--whisper-dir",
-        help="Directory to store Whisper models (default: ~/.cache/whisper/).",
+        default=None,
+        help="Directory to store Whisper models (default: ~/.cache/whisper/, config: whisper_dir)",
     )
     parser.add_argument(
         "--whisper-device",
         choices=["gpu", "cpu"],
-        default="gpu",
-        help="Device for Whisper transcription (default: gpu).",
+        default=None,
+        help="Device for Whisper transcription (default: gpu, config: whisper_device)",
     )
     parser.add_argument(
         "--keep-vtt",
@@ -559,17 +623,25 @@ def main() -> None:
     if not args.url:
         parser.error("a YouTube URL is required")
 
+    config = load_config()
+
+    lang = resolve_value(args.lang, config, "lang")
+    fmt = resolve_value(args.format, config, "format")
+    whisper_model = resolve_value(args.whisper_model, config, "whisper_model")
+    whisper_dir = resolve_value(args.whisper_dir, config, "whisper_dir")
+    whisper_device = resolve_value(args.whisper_device, config, "whisper_device")
+
     try:
         process_video(
             url=args.url,
             output=args.output,
-            fmt=args.format,
-            lang=args.lang,
+            fmt=fmt,
+            lang=lang,
             list_only=args.list_subs,
             force_whisper=args.whisper,
-            whisper_model=args.whisper_model,
-            whisper_dir=args.whisper_dir,
-            whisper_device=args.whisper_device,
+            whisper_model=whisper_model,
+            whisper_dir=whisper_dir,
+            whisper_device=whisper_device,
             keep_vtt=args.keep_vtt,
             keep_audio=args.keep_audio,
             clipboard=args.clipboard,
