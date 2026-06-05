@@ -2,9 +2,11 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+.eggs/
 dist/
 build/
 *.egg
+*.whl
 
 # Virtual environments
 .venv/
@@ -23,5 +25,8 @@ Thumbs.db
 # makepkg artifacts
 pkg/
 src/
+yttranscript-*/
 *.pkg.tar.zst
 *.tar.gz
+*.pkg.tar.xz
+*.pkg.tar.gz
