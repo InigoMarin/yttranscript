@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.8.1"
+__version__ = "1.8.2"
 
 import argparse
 import os
