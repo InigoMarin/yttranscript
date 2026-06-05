@@ -19,3 +19,9 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# makepkg artifacts
+pkg/
+src/
+*.pkg.tar.zst
+*.tar.gz

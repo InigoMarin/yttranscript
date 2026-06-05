@@ -5,11 +5,28 @@ Falls back to OpenAI Whisper transcription when no subtitles are available.
 
 ## Install
 
+### pip (any system)
+
 ```bash
 pip install -e .
 ```
 
-This installs the `yttranscript` command globally.
+### Arch Linux
+
+```bash
+# 1. Create source tarball
+mkdir -p yttranscript-1.0.0
+cp yttranscript.py pyproject.toml README.md LICENSE yttranscript-1.0.0/
+tar czf yttranscript-1.0.0.tar.gz yttranscript-1.0.0/
+
+# 2. Build and install
+makepkg -si
+
+# 3. Clean up
+rm -rf yttranscript-1.0.0 yttranscript-1.0.0.tar.gz
+```
+
+This installs the `yttranscript` command system-wide. Uninstall with `pacman -R yttranscript`.
 
 ## Usage
 
@@ -48,6 +65,7 @@ yttranscript URL --keep-vtt --keep-audio
 | `--list-subs` | List available subtitles and exit |
 | `--whisper` | Force Whisper transcription (skip subtitle download) |
 | `--whisper-model` | Whisper model: `tiny`, `base` (default), `small`, `medium`, `large` |
+| `--whisper-dir` | Directory to store Whisper models (default: `~/.cache/whisper/`) |
 | `--keep-vtt` | Keep VTT file after text conversion |
 | `--keep-audio` | Keep audio file after Whisper transcription |
 
