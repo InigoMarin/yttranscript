@@ -251,9 +251,8 @@ def transcribe_with_whisper(
     if keep_audio:
         info(f"Audio kept at: {audio_file}")
     else:
-        if confirm("Delete the audio file?", default=True):
-            Path(audio_file).unlink(missing_ok=True)
-            success("Audio deleted.")
+        Path(audio_file).unlink(missing_ok=True)
+        success("Audio deleted.")
 
     return True
 

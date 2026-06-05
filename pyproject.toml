@@ -7,7 +7,7 @@ name = "yttranscript"
 version = "1.0.0"
 description = "Download YouTube video transcripts (subtitles/captions) with Whisper fallback."
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.9"
 authors = [{ name = "ima" }]
 keywords = ["youtube", "transcript", "subtitles", "whisper", "yt-dlp", "cli"]
@@ -16,7 +16,6 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
