@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.5.1"
+__version__ = "1.6.0"
 
 import argparse
 import os
@@ -636,13 +636,38 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Copy transcript to system clipboard.",
     )
+    parser.add_argument(
+        "--show-config",
+        action="store_true",
+        help="Show current configuration and exit.",
+    )
     return parser
+
+
+def show_config() -> None:
+    """Display current configuration and exit."""
+    config = load_config()
+    print(f"\n  {Colors.BOLD}Config file:{Colors.RESET} {CONFIG_PATH}\n")
+
+    keys = ["lang", "format", "whisper_model", "whisper_device", "whisper_dir"]
+    for key in keys:
+        raw = config.get(key)
+        resolved = resolve_value(None, config, key)
+        source = "config" if raw is not None else "default"
+        display = resolved if resolved is not None else "auto-detect"
+        print(f"  {key + ':':16} {str(display):12} ({source})")
+
+    print()
+    sys.exit(0)
 
 
 def main() -> None:
     ensure_config_dir()
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.show_config:
+        show_config()
 
     if not args.url:
         parser.error("a YouTube URL is required")
