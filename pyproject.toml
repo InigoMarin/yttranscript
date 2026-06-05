@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yttranscript"
+version = "1.0.0"
+description = "Download YouTube video transcripts (subtitles/captions) with Whisper fallback."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "ima" }]
+keywords = ["youtube", "transcript", "subtitles", "whisper", "yt-dlp", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Utilities",
+]
+
+[project.scripts]
+yttranscript = "yttranscript:main"
+
+[project.urls]
+Homepage = "https://github.com/ima/yttranscript"
+
+[tool.setuptools]
+py-modules = ["yttranscript"]

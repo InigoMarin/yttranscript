@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# Transcripts generados (salida del CLI)
+*.txt
+*.vtt
+*.srt
+*.mp3
+
+# OS
+.DS_Store
+Thumbs.db
