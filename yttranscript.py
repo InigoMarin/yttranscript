@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.2.2"
+__version__ = "1.3.0"
 
 import argparse
 import os
@@ -273,7 +273,7 @@ def transcribe_with_whisper(
 # VTT → Plain text conversion
 # ---------------------------------------------------------------------------
 
-def vtt_to_text(vtt_path: Path, output_path: Path) -> None:
+def vtt_to_text(vtt_path: Path, output_path: Path, video_info: dict | None = None) -> None:
     """Convert VTT to plain text, deduplicating overlapping lines."""
     seen: set[str] = set()
     lines: list[str] = []
@@ -310,6 +310,17 @@ def vtt_to_text(vtt_path: Path, output_path: Path) -> None:
                 lines.append(clean)
 
     with open(output_path, "w", encoding="utf-8") as f:
+        if video_info:
+            duration = video_info.get("duration", 0)
+            duration_str = f"{duration // 60}:{duration % 60:02d}" if duration else "unknown"
+            header = (
+                f"Title: {video_info.get('title', 'unknown')}\n"
+                f"URL: {video_info.get('url', 'unknown')}\n"
+                f"Duration: {duration_str}\n"
+                f"Transcribed: {'Whisper' if video_info.get('whisper') else 'YouTube subtitles'}\n"
+                f"\n{'─' * 60}\n\n"
+            )
+            f.write(header)
         f.write("\n".join(lines))
         f.write("\n")
 
@@ -345,6 +356,8 @@ def process_video(
         info("Fetching video title...")
         video_title = get_video_title(url)
         success(f"Video: {video_title}")
+
+    video_duration = get_video_info(url)["duration"]
 
     # Sanitize output name for use as prefix
     temp_prefix = "transcript_temp"
@@ -384,7 +397,12 @@ def process_video(
                     # Convert to plain text
                     info("Converting to plain text (deduplicating lines)...")
                     txt_output = Path(f"{video_title}.txt")
-                    vtt_to_text(final_vtt, txt_output)
+                    vtt_to_text(final_vtt, txt_output, {
+                        "title": video_title,
+                        "url": url,
+                        "duration": video_duration,
+                        "whisper": False,
+                    })
                     success(f"Saved: {txt_output}")
 
                     if clipboard:
@@ -418,7 +436,12 @@ def process_video(
         else:
             info("Converting to plain text...")
             txt_output = Path(f"{video_title}.txt")
-            vtt_to_text(vtt_file, txt_output)
+            vtt_to_text(vtt_file, txt_output, {
+                "title": video_title,
+                "url": url,
+                "duration": video_duration,
+                "whisper": True,
+            })
             success(f"Saved: {txt_output}")
 
             if clipboard:
