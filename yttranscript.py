@@ -523,9 +523,9 @@ def process_video(
     temp_prefix = "transcript_temp"
 
     if not force_whisper:
-        # List available subs (informational)
-        info("Checking available subtitles...")
-        if VERBOSITY >= 1 and not stdout_mode:
+        # List available subs (only in verbose mode)
+        if VERBOSITY >= 2 and not stdout_mode:
+            info("Available subtitles:")
             run(["yt-dlp", "--list-subs", url], check=False)
 
         # Strategy: try manual → auto → whisper
