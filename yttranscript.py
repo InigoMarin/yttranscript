@@ -5,9 +5,10 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.10.0"
+__version__ = "1.11.0"
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -29,6 +30,7 @@ DEFAULTS = {
     "lang": None,
     "format": "txt",
     "timestamps": False,
+    "chunk_size": 30,
     "whisper_model": "base",
     "whisper_device": "gpu",
     "whisper_dir": None,
@@ -108,6 +110,7 @@ DEFAULT_CONFIG = """\
 # lang = "es"
 # format = "txt"
 # timestamps = true
+# chunk_size = 30
 # whisper_model = "base"
 # whisper_device = "gpu"
 # whisper_dir = "/home/user/.cache/whisper"
@@ -399,6 +402,109 @@ def _parse_vtt_timestamp(time_str: str) -> str:
     return f"[{total // 60:02d}:{total % 60:02d}]"
 
 
+def _vtt_time_to_seconds(time_str: str) -> int:
+    """Convert VTT timestamp '00:01:23.000' to total seconds."""
+    parts = time_str.strip().split(":")
+    if len(parts) == 3:
+        h, m, s = parts
+    elif len(parts) == 2:
+        h, m, s = "0", parts[0], parts[1]
+    else:
+        return 0
+    return int(h) * 3600 + int(m) * 60 + int(s.split(".")[0])
+
+
+def _seconds_to_ts(total: int) -> str:
+    """Convert seconds to 'MM:SS' or 'HH:MM:SS'."""
+    if total >= 3600:
+        return f"{total // 3600:02d}:{total % 3600 // 60:02d}:{total % 60:02d}"
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def _clean_vtt_text(text: str) -> str:
+    """Remove HTML tags and decode entities."""
+    text = re.sub(r"<[^>]*>", "", text)
+    text = (
+        text.replace("&amp;", "&")
+        .replace("&gt;", ">")
+        .replace("&lt;", "<")
+        .replace("&#39;", "'")
+        .replace("&quot;", '"')
+    )
+    return text.strip()
+
+
+def vtt_to_json(vtt_path: Path, video_info: dict, chunk_size: int = 30) -> str:
+    """Convert VTT to JSON with chunked text for RAG ingestion."""
+    cues: list[tuple[int, str]] = []
+    current_start: int | None = None
+    cue_lines: list[str] = []
+
+    with open(vtt_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                if current_start is not None and cue_lines:
+                    text = _clean_vtt_text(" ".join(cue_lines))
+                    if text:
+                        cues.append((current_start, text))
+                    cue_lines = []
+                    current_start = None
+                continue
+            if line.startswith("WEBVTT") or line.startswith("Kind:") or line.startswith("Language:"):
+                continue
+            if "-->" in line:
+                current_start = _vtt_time_to_seconds(line.split("-->")[0])
+                cue_lines = []
+                continue
+            if line.isdigit() and current_start is not None:
+                continue
+            if current_start is not None:
+                cue_lines.append(line)
+
+    if current_start is not None and cue_lines:
+        text = _clean_vtt_text(" ".join(cue_lines))
+        if text:
+            cues.append((current_start, text))
+
+    deduped: list[tuple[int, str]] = []
+    last_text = ""
+    for start, text in cues:
+        if text != last_text:
+            deduped.append((start, text))
+            last_text = text
+
+    chunks = []
+    i = 0
+    while i < len(deduped):
+        chunk_start = deduped[i][0]
+        chunk_texts = []
+        while i < len(deduped) and deduped[i][0] < chunk_start + chunk_size:
+            chunk_texts.append(deduped[i][1])
+            i += 1
+        if i < len(deduped):
+            chunk_end = deduped[i][0]
+        else:
+            chunk_end = chunk_start + chunk_size
+        chunks.append({
+            "start": _seconds_to_ts(chunk_start),
+            "end": _seconds_to_ts(chunk_end),
+            "start_seconds": chunk_start,
+            "end_seconds": chunk_end,
+            "text": " ".join(chunk_texts),
+        })
+
+    result = {
+        "title": video_info.get("title", "unknown"),
+        "url": video_info.get("url", ""),
+        "duration": video_info.get("duration", 0),
+        "source": "whisper" if video_info.get("whisper") else "subtitles",
+        "chunk_size": chunk_size,
+        "chunks": chunks,
+    }
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
 def vtt_to_text(vtt_path: Path, output_path: Path, video_info: dict | None = None, timestamps: bool = False) -> None:
     """Convert VTT to plain text, deduplicating overlapping lines."""
     seen: set[str] = set()
@@ -538,6 +644,7 @@ def process_video(
     keep_audio: bool = False,
     stdout_mode: bool = False,
     timestamps: bool = False,
+    chunk_size: int = 30,
 ) -> None:
     """Main processing pipeline."""
     ensure_yt_dlp()
@@ -616,6 +723,13 @@ def process_video(
                     if stdout_mode:
                         if fmt == "vtt":
                             sys.stdout.write(vtt_file.read_text(encoding="utf-8"))
+                        elif fmt == "json":
+                            sys.stdout.write(vtt_to_json(vtt_file, {
+                                "title": video_title,
+                                "url": url,
+                                "duration": video_duration,
+                                "whisper": False,
+                            }, chunk_size=chunk_size))
                         else:
                             vtt_to_stdout(vtt_file, {
                                 "title": video_title,
@@ -631,6 +745,18 @@ def process_video(
 
                     if fmt == "vtt":
                         success(f"Saved: {final_vtt}")
+                    elif fmt == "json":
+                        info("Converting to JSON (chunked for RAG)...")
+                        json_output = Path(f"{video_title}.json")
+                        json_output.write_text(vtt_to_json(final_vtt, {
+                            "title": video_title,
+                            "url": url,
+                            "duration": video_duration,
+                            "whisper": False,
+                        }, chunk_size=chunk_size), encoding="utf-8")
+                        success(f"Saved: {json_output}")
+                        if not keep_vtt:
+                            final_vtt.unlink(missing_ok=True)
                     else:
                         # Convert to plain text
                         info("Converting to plain text (deduplicating lines)...")
@@ -669,6 +795,13 @@ def process_video(
             if stdout_mode:
                 if fmt == "vtt":
                     sys.stdout.write(vtt_file.read_text(encoding="utf-8"))
+                elif fmt == "json":
+                    sys.stdout.write(vtt_to_json(vtt_file, {
+                        "title": video_title,
+                        "url": url,
+                        "duration": video_duration,
+                        "whisper": True,
+                    }, chunk_size=chunk_size))
                 else:
                     vtt_to_stdout(vtt_file, {
                         "title": video_title,
@@ -679,6 +812,18 @@ def process_video(
                 vtt_file.unlink(missing_ok=True)
             elif fmt == "vtt":
                 success(f"Saved: {vtt_file}")
+            elif fmt == "json":
+                info("Converting to JSON (chunked for RAG)...")
+                json_output = Path(f"{video_title}.json")
+                json_output.write_text(vtt_to_json(vtt_file, {
+                    "title": video_title,
+                    "url": url,
+                    "duration": video_duration,
+                    "whisper": True,
+                }, chunk_size=chunk_size), encoding="utf-8")
+                success(f"Saved: {json_output}")
+                if not keep_vtt:
+                    vtt_file.unlink(missing_ok=True)
             else:
                 info("Converting to plain text...")
                 txt_output = Path(f"{video_title}.txt")
@@ -739,9 +884,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-f", "--format",
-        choices=["txt", "vtt"],
+        choices=["txt", "vtt", "json"],
         default=None,
-        help="Output format (default: txt, config: format)",
+        help="Output format (default: txt, config: format). json = chunked for RAG.",
+    )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=None,
+        help="Seconds per chunk for JSON output (default: 30, config: chunk_size).",
     )
     parser.add_argument(
         "--timestamps",
@@ -809,7 +960,7 @@ def show_config() -> None:
     config = load_config()
     print(f"\n  {Colors.BOLD}Config file:{Colors.RESET} {CONFIG_PATH}\n")
 
-    keys = ["lang", "format", "timestamps", "whisper_model", "whisper_device", "whisper_dir"]
+    keys = ["lang", "format", "timestamps", "chunk_size", "whisper_model", "whisper_device", "whisper_dir"]
     for key in keys:
         raw = config.get(key)
         resolved = resolve_value(None, config, key)
@@ -843,6 +994,7 @@ def main() -> None:
     lang = resolve_value(args.lang, config, "lang")
     fmt = resolve_value(args.format, config, "format")
     timestamps = resolve_value(args.timestamps, config, "timestamps") or False
+    chunk_size = resolve_value(args.chunk_size, config, "chunk_size")
     whisper_model = resolve_value(args.whisper_model, config, "whisper_model")
     whisper_dir = resolve_value(args.whisper_dir, config, "whisper_dir")
     whisper_device = resolve_value(args.whisper_device, config, "whisper_device")
@@ -862,6 +1014,7 @@ def main() -> None:
             keep_audio=args.keep_audio,
             stdout_mode=args.stdout,
             timestamps=timestamps,
+            chunk_size=chunk_size,
         )
     except KeyboardInterrupt:
         print()

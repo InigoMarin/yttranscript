@@ -50,6 +50,10 @@ yttranscript URL --format vtt
 # Include [MM:SS] timestamps in text output
 yttranscript URL --timestamps
 
+# JSON array output for RAG / vector DB ingestion
+yttranscript URL --format json
+yttranscript URL --format json --chunk-size 60 --stdout | python ingest.py
+
 # Custom output filename
 yttranscript URL -o my_transcript
 
@@ -83,8 +87,9 @@ yttranscript URL --keep-vtt --keep-audio
 | Flag | Description |
 |---|---|
 | `-o, --output` | Output filename (without extension). Default: video title. |
-| `-f, --format` | `txt` (default) or `vtt` |
+| `-f, --format` | `txt` (default), `vtt`, or `json` (chunked for RAG) |
 | `--timestamps` | Include `[MM:SS]` timestamps in text output (config: `timestamps`) |
+| `--chunk-size` | Seconds per chunk for JSON output (default: 30, config: `chunk_size`) |
 | `--lang` | Subtitle language code (default: auto-detect) |
 | `--list-subs` | List available subtitles and exit |
 | `--whisper` | Force Whisper transcription (skip subtitle download) |
@@ -120,6 +125,7 @@ On first run, `yttranscript` creates a config file at `~/.config/yttranscript/co
 lang = "es"
 format = "txt"
 timestamps = true
+chunk_size = 30
 whisper_model = "medium"
 whisper_device = "gpu"
 # whisper_dir = "/home/user/.cache/whisper"
@@ -167,4 +173,51 @@ yttranscript URL --stdout | grep -i "webhook"
 
 # Copy transcript to clipboard without saving
 yttranscript URL --stdout | wl-copy
+```
+
+## JSON Output for RAG
+
+```bash
+yttranscript URL --format json --stdout
+yttranscript URL --format json -o my_transcript
+```
+
+Output structure:
+
+```json
+{
+  "title": "Video Title",
+  "url": "https://youtube.com/watch?v=...",
+  "duration": 1800,
+  "source": "subtitles",
+  "chunk_size": 30,
+  "chunks": [
+    {
+      "start": "00:00",
+      "end": "00:30",
+      "start_seconds": 0,
+      "end_seconds": 30,
+      "text": "Bienvenidos a esta presentacion..."
+    }
+  ]
+}
+```
+
+Ingest with Python:
+
+```python
+import json, sys
+
+data = json.load(sys.stdin)
+for chunk in data["chunks"]:
+    doc = {
+        "text": chunk["text"],
+        "metadata": {
+            "title": data["title"],
+            "url": data["url"],
+            "start": chunk["start"],
+            "deep_link": f"{data['url']}&t={chunk['start_seconds']}",
+        },
+    }
+    vector_db.add(doc)
 ```
