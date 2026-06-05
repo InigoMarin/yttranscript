@@ -22,15 +22,15 @@ Or step by step:
 
 ```bash
 # 1. Create source tarball
-mkdir -p yttranscript-1.7.0
-cp yttranscript.py pyproject.toml README.md LICENSE yttranscript-1.7.0/
-tar czf yttranscript-1.7.0.tar.gz yttranscript-1.7.0/
+mkdir -p yttranscript-1.8.1
+cp yttranscript.py pyproject.toml README.md LICENSE yttranscript-1.8.1/
+tar czf yttranscript-1.8.1.tar.gz yttranscript-1.8.1/
 
 # 2. Build and install
 makepkg -si
 
 # 3. Clean up
-rm -rf yttranscript-1.7.0 yttranscript-1.7.0.tar.gz
+rm -rf yttranscript-1.8.1 yttranscript-1.8.1.tar.gz
 ```
 
 This installs the `yttranscript` command system-wide. Uninstall with `pacman -R yttranscript`.
@@ -62,6 +62,12 @@ yttranscript URL --whisper --whisper-device cpu
 yttranscript URL --stdout | grep "keyword"
 yttranscript URL --stdout | wl-copy
 
+# Quiet mode (errors only, for scripts/CI)
+yttranscript URL -q
+
+# Verbose mode (debug: commands, yt-dlp/whisper output)
+yttranscript URL -v
+
 # Show current configuration
 yttranscript --show-config
 
@@ -82,6 +88,8 @@ yttranscript URL --keep-vtt --keep-audio
 | `--whisper-device` | Device for Whisper: `gpu` (default) or `cpu` |
 | `--whisper-dir` | Directory to store Whisper models (default: `~/.cache/whisper/`) |
 | `--stdout` | Output transcript to stdout for piping (no file saved) |
+| `-q, --quiet` | Suppress all output except errors |
+| `-v, --verbose` | Show debug output (commands, yt-dlp/whisper output) |
 | `--keep-vtt` | Keep VTT file after text conversion |
 | `--keep-audio` | Keep audio file after Whisper transcription |
 | `--show-config` | Show current configuration and exit |
