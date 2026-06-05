@@ -182,6 +182,7 @@ def transcribe_with_whisper(
     model: str = "base",
     language: str | None = None,
     keep_audio: bool = False,
+    download_dir: str | None = None,
 ) -> bool:
     """Download audio and transcribe with Whisper. Returns True on success."""
     info_url = get_video_info(url)
@@ -230,6 +231,8 @@ def transcribe_with_whisper(
     whisper_cmd = ["whisper", audio_file, "--model", model, "--output_format", "vtt"]
     if language:
         whisper_cmd.extend(["--language", language])
+    if download_dir:
+        whisper_cmd.extend(["--download_root", download_dir])
 
     result = run(whisper_cmd, check=False)
     if result.returncode != 0:
@@ -312,6 +315,7 @@ def process_video(
     list_only: bool = False,
     force_whisper: bool = False,
     whisper_model: str = "base",
+    whisper_dir: str | None = None,
     keep_vtt: bool = False,
     keep_audio: bool = False,
 ) -> None:
@@ -384,7 +388,8 @@ def process_video(
 
     # Last resort: Whisper
     if not transcribe_with_whisper(
-        url, video_title, model=whisper_model, language=lang, keep_audio=keep_audio
+        url, video_title, model=whisper_model, language=lang,
+        keep_audio=keep_audio, download_dir=whisper_dir,
     ):
         error("Could not get transcript. The video may not have subtitles and transcription was not performed.")
         sys.exit(1)
@@ -457,6 +462,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Whisper model size (default: base)",
     )
     parser.add_argument(
+        "--whisper-dir",
+        help="Directory to store Whisper models (default: ~/.cache/whisper/).",
+    )
+    parser.add_argument(
         "--keep-vtt",
         action="store_true",
         help="Keep the VTT file after converting to text.",
@@ -482,6 +491,7 @@ def main() -> None:
             list_only=args.list_subs,
             force_whisper=args.whisper,
             whisper_model=args.whisper_model,
+            whisper_dir=args.whisper_dir,
             keep_vtt=args.keep_vtt,
             keep_audio=args.keep_audio,
         )
