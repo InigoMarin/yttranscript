@@ -47,6 +47,9 @@ yttranscript URL --lang es
 # Output as VTT (with timestamps)
 yttranscript URL --format vtt
 
+# Include [MM:SS] timestamps in text output
+yttranscript URL --timestamps
+
 # Custom output filename
 yttranscript URL -o my_transcript
 
@@ -81,6 +84,7 @@ yttranscript URL --keep-vtt --keep-audio
 |---|---|
 | `-o, --output` | Output filename (without extension). Default: video title. |
 | `-f, --format` | `txt` (default) or `vtt` |
+| `--timestamps` | Include `[MM:SS]` timestamps in text output (config: `timestamps`) |
 | `--lang` | Subtitle language code (default: auto-detect) |
 | `--list-subs` | List available subtitles and exit |
 | `--whisper` | Force Whisper transcription (skip subtitle download) |
@@ -115,6 +119,7 @@ On first run, `yttranscript` creates a config file at `~/.config/yttranscript/co
 
 lang = "es"
 format = "txt"
+timestamps = true
 whisper_model = "medium"
 whisper_device = "gpu"
 # whisper_dir = "/home/user/.cache/whisper"
@@ -137,8 +142,8 @@ yttranscript --show-config
 ## How It Works
 
 1. Auto-detect video language (or use `--lang`)
-2. Try manual subtitles (highest quality, human-created)
-3. Fall back to auto-generated subtitles
+2. Try manual subtitles: exact lang → wildcard (e.g. `es.*`) → English fallback
+3. Fall back to auto-generated subtitles (same language chain)
 4. Last resort: download audio + transcribe with Whisper (GPU with CPU fallback)
 5. Convert VTT to clean plain text (deduplicated lines, with video info header)
 
@@ -150,6 +155,9 @@ yttranscript "https://youtube.com/watch?v=dQw4w9WgXcQ"
 
 # Spanish webinar, VTT format
 yttranscript "https://youtube.com/watch?v=FWAXGxsvLxM" --format vtt
+
+# Spanish video with timestamps for navigation
+yttranscript "https://youtube.com/watch?v=VIDEO_ID" --lang es --timestamps
 
 # Transcribe with Whisper medium model on GPU
 yttranscript "https://youtube.com/watch?v=VIDEO_ID" --whisper --whisper-model medium

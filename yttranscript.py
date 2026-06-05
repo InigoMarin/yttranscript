@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.9.1"
+__version__ = "1.10.0"
 
 import argparse
 import os
@@ -28,6 +28,7 @@ CONFIG_PATH = Path.home() / ".config" / "yttranscript" / "config.toml"
 DEFAULTS = {
     "lang": None,
     "format": "txt",
+    "timestamps": False,
     "whisper_model": "base",
     "whisper_device": "gpu",
     "whisper_dir": None,
@@ -106,6 +107,7 @@ DEFAULT_CONFIG = """\
 
 # lang = "es"
 # format = "txt"
+# timestamps = true
 # whisper_model = "base"
 # whisper_device = "gpu"
 # whisper_dir = "/home/user/.cache/whisper"
@@ -382,10 +384,26 @@ def transcribe_with_whisper(
 # VTT → Plain text conversion
 # ---------------------------------------------------------------------------
 
-def vtt_to_text(vtt_path: Path, output_path: Path, video_info: dict | None = None) -> None:
+def _parse_vtt_timestamp(time_str: str) -> str:
+    """Parse a VTT timestamp like '00:01:23.000' → '[01:23]' or '[01:01:23]'."""
+    parts = time_str.strip().split(":")
+    if len(parts) == 3:
+        h, m, s = parts
+    elif len(parts) == 2:
+        h, m, s = "0", parts[0], parts[1]
+    else:
+        return ""
+    total = int(h) * 3600 + int(m) * 60 + int(s.split(".")[0])
+    if total >= 3600:
+        return f"[{total // 3600:02d}:{total % 3600 // 60:02d}:{total % 60:02d}]"
+    return f"[{total // 60:02d}:{total % 60:02d}]"
+
+
+def vtt_to_text(vtt_path: Path, output_path: Path, video_info: dict | None = None, timestamps: bool = False) -> None:
     """Convert VTT to plain text, deduplicating overlapping lines."""
     seen: set[str] = set()
     lines: list[str] = []
+    current_ts = ""
 
     with open(vtt_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -399,6 +417,8 @@ def vtt_to_text(vtt_path: Path, output_path: Path, video_info: dict | None = Non
             if line.startswith("Language:"):
                 continue
             if "-->" in line:
+                if timestamps:
+                    current_ts = _parse_vtt_timestamp(line.split("-->")[0])
                 continue
             if line.isdigit():
                 continue
@@ -416,7 +436,10 @@ def vtt_to_text(vtt_path: Path, output_path: Path, video_info: dict | None = Non
             clean = clean.strip()
             if clean and clean not in seen:
                 seen.add(clean)
-                lines.append(clean)
+                if timestamps and current_ts:
+                    lines.append(f"{current_ts} {clean}")
+                else:
+                    lines.append(clean)
 
     with open(output_path, "w", encoding="utf-8") as f:
         if video_info:
@@ -434,10 +457,11 @@ def vtt_to_text(vtt_path: Path, output_path: Path, video_info: dict | None = Non
         f.write("\n")
 
 
-def vtt_to_stdout(vtt_path: Path, video_info: dict | None = None) -> None:
+def vtt_to_stdout(vtt_path: Path, video_info: dict | None = None, timestamps: bool = False) -> None:
     """Convert VTT to plain text and print to stdout."""
     seen: set[str] = set()
     lines: list[str] = []
+    current_ts = ""
 
     with open(vtt_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -451,6 +475,8 @@ def vtt_to_stdout(vtt_path: Path, video_info: dict | None = None) -> None:
             if line.startswith("Language:"):
                 continue
             if "-->" in line:
+                if timestamps:
+                    current_ts = _parse_vtt_timestamp(line.split("-->")[0])
                 continue
             if line.isdigit():
                 continue
@@ -466,7 +492,10 @@ def vtt_to_stdout(vtt_path: Path, video_info: dict | None = None) -> None:
             clean = clean.strip()
             if clean and clean not in seen:
                 seen.add(clean)
-                lines.append(clean)
+                if timestamps and current_ts:
+                    lines.append(f"{current_ts} {clean}")
+                else:
+                    lines.append(clean)
 
     if video_info:
         duration = video_info.get("duration", 0)
@@ -508,6 +537,7 @@ def process_video(
     keep_vtt: bool = False,
     keep_audio: bool = False,
     stdout_mode: bool = False,
+    timestamps: bool = False,
 ) -> None:
     """Main processing pipeline."""
     ensure_yt_dlp()
@@ -592,7 +622,7 @@ def process_video(
                                 "url": url,
                                 "duration": video_duration,
                                 "whisper": False,
-                            })
+                            }, timestamps=timestamps)
                         vtt_file.unlink(missing_ok=True)
                         return
 
@@ -610,7 +640,7 @@ def process_video(
                             "url": url,
                             "duration": video_duration,
                             "whisper": False,
-                        })
+                        }, timestamps=timestamps)
                         success(f"Saved: {txt_output}")
 
                         if keep_vtt:
@@ -645,7 +675,7 @@ def process_video(
                         "url": url,
                         "duration": video_duration,
                         "whisper": True,
-                    })
+                    }, timestamps=timestamps)
                 vtt_file.unlink(missing_ok=True)
             elif fmt == "vtt":
                 success(f"Saved: {vtt_file}")
@@ -657,7 +687,7 @@ def process_video(
                     "url": url,
                     "duration": video_duration,
                     "whisper": True,
-                })
+                }, timestamps=timestamps)
                 success(f"Saved: {txt_output}")
 
                 if not keep_vtt:
@@ -712,6 +742,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["txt", "vtt"],
         default=None,
         help="Output format (default: txt, config: format)",
+    )
+    parser.add_argument(
+        "--timestamps",
+        action="store_true",
+        default=None,
+        help="Include [MM:SS] timestamps in text output (config: timestamps).",
     )
     parser.add_argument(
         "--lang",
@@ -773,7 +809,7 @@ def show_config() -> None:
     config = load_config()
     print(f"\n  {Colors.BOLD}Config file:{Colors.RESET} {CONFIG_PATH}\n")
 
-    keys = ["lang", "format", "whisper_model", "whisper_device", "whisper_dir"]
+    keys = ["lang", "format", "timestamps", "whisper_model", "whisper_device", "whisper_dir"]
     for key in keys:
         raw = config.get(key)
         resolved = resolve_value(None, config, key)
@@ -806,6 +842,7 @@ def main() -> None:
 
     lang = resolve_value(args.lang, config, "lang")
     fmt = resolve_value(args.format, config, "format")
+    timestamps = resolve_value(args.timestamps, config, "timestamps") or False
     whisper_model = resolve_value(args.whisper_model, config, "whisper_model")
     whisper_dir = resolve_value(args.whisper_dir, config, "whisper_dir")
     whisper_device = resolve_value(args.whisper_device, config, "whisper_device")
@@ -824,6 +861,7 @@ def main() -> None:
             keep_vtt=args.keep_vtt,
             keep_audio=args.keep_audio,
             stdout_mode=args.stdout,
+            timestamps=timestamps,
         )
     except KeyboardInterrupt:
         print()
