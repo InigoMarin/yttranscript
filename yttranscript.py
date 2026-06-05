@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.2.1"
+__version__ = "1.2.2"
 
 import argparse
 import os
@@ -210,10 +210,6 @@ def transcribe_with_whisper(
     if size_mb:
         print(f"  {Colors.BOLD}Audio size:{Colors.RESET} ~{size_mb} MB")
     print()
-
-    if not confirm("Download audio and transcribe with Whisper?"):
-        warn("Transcription cancelled.")
-        return False
 
     if not ensure_whisper():
         error("Cannot proceed without Whisper.")
