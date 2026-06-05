@@ -5,12 +5,13 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.11.0"
+__version__ = "1.12.0"
 
 import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -31,6 +32,8 @@ DEFAULTS = {
     "format": "txt",
     "timestamps": False,
     "chunk_size": 30,
+    "summarize_cmd": None,
+    "summarize_prompt": "Summarize this video transcript in bullet points",
     "whisper_model": "base",
     "whisper_device": "gpu",
     "whisper_dir": None,
@@ -111,6 +114,8 @@ DEFAULT_CONFIG = """\
 # format = "txt"
 # timestamps = true
 # chunk_size = 30
+# summarize_cmd = "llama-cli -m ~/.local/share/models/model.gguf --temp 0.7 -n 1024"
+# summarize_prompt = "Summarize this video in bullet points"
 # whisper_model = "base"
 # whisper_device = "gpu"
 # whisper_dir = "/home/user/.cache/whisper"
@@ -619,6 +624,58 @@ def vtt_to_stdout(vtt_path: Path, video_info: dict | None = None, timestamps: bo
 
 
 # ---------------------------------------------------------------------------
+# Summarization
+# ---------------------------------------------------------------------------
+
+def _extract_vtt_plain_text(vtt_path: Path) -> str:
+    """Extract clean plain text from VTT (for piping to summarizer)."""
+    seen: set[str] = set()
+    lines: list[str] = []
+
+    with open(vtt_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("WEBVTT"):
+                continue
+            if line.startswith("Kind:") or line.startswith("Language:"):
+                continue
+            if "-->" in line or line.isdigit():
+                continue
+            clean = _clean_vtt_text(line)
+            if clean and clean not in seen:
+                seen.add(clean)
+                lines.append(clean)
+
+    return " ".join(lines)
+
+
+def summarize_text(text: str, cmd: str, prompt: str) -> bool:
+    """Pipe text to an external command for summarization."""
+    full_input = f"{prompt}\n\n{text}"
+    cmd_parts = shlex.split(cmd)
+    debug(f"$ echo '...' | {' '.join(cmd_parts)}")
+
+    try:
+        result = subprocess.run(
+            cmd_parts,
+            input=full_input,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        error(f"Summarize command not found: {cmd_parts[0]}")
+        return False
+
+    if result.returncode != 0:
+        error(f"Summarize command failed: {result.stderr.strip()}")
+        return False
+
+    print(result.stdout, end="")
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Main logic
 # ---------------------------------------------------------------------------
 
@@ -645,6 +702,9 @@ def process_video(
     stdout_mode: bool = False,
     timestamps: bool = False,
     chunk_size: int = 30,
+    summarize: bool = False,
+    summarize_cmd: str | None = None,
+    summarize_prompt: str | None = None,
 ) -> None:
     """Main processing pipeline."""
     ensure_yt_dlp()
@@ -720,6 +780,18 @@ def process_video(
                 if vtt_files:
                     vtt_file = vtt_files[0]
 
+                    if summarize:
+                        if not summarize_cmd:
+                            error("--summarize requires summarize_cmd in config or --summarize-cmd flag.")
+                            sys.exit(1)
+                        info("Extracting text for summarization...")
+                        text = _extract_vtt_plain_text(vtt_file)
+                        vtt_file.unlink(missing_ok=True)
+                        success(f"Piping transcript to: {summarize_cmd}")
+                        if not summarize_text(text, summarize_cmd, summarize_prompt or ""):
+                            sys.exit(1)
+                        return
+
                     if stdout_mode:
                         if fmt == "vtt":
                             sys.stdout.write(vtt_file.read_text(encoding="utf-8"))
@@ -792,6 +864,18 @@ def process_video(
         # Post-process Whisper output
         vtt_file = Path(f"{video_title}.vtt")
         if vtt_file.exists():
+            if summarize:
+                if not summarize_cmd:
+                    error("--summarize requires summarize_cmd in config or --summarize-cmd flag.")
+                    sys.exit(1)
+                info("Extracting text for summarization...")
+                text = _extract_vtt_plain_text(vtt_file)
+                vtt_file.unlink(missing_ok=True)
+                success(f"Piping transcript to: {summarize_cmd}")
+                if not summarize_text(text, summarize_cmd, summarize_prompt or ""):
+                    sys.exit(1)
+                return
+
             if stdout_mode:
                 if fmt == "vtt":
                     sys.stdout.write(vtt_file.read_text(encoding="utf-8"))
@@ -952,6 +1036,21 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show current configuration and exit.",
     )
+    parser.add_argument(
+        "--summarize",
+        action="store_true",
+        help="Pipe transcript to an external AI command for summarization.",
+    )
+    parser.add_argument(
+        "--summarize-cmd",
+        default=None,
+        help='Command to pipe transcript to (default: config summarize_cmd). Example: "llama-cli -m model.gguf"',
+    )
+    parser.add_argument(
+        "--summarize-prompt",
+        default=None,
+        help="Prompt prepended to transcript before piping (default: config summarize_prompt).",
+    )
     return parser
 
 
@@ -960,7 +1059,7 @@ def show_config() -> None:
     config = load_config()
     print(f"\n  {Colors.BOLD}Config file:{Colors.RESET} {CONFIG_PATH}\n")
 
-    keys = ["lang", "format", "timestamps", "chunk_size", "whisper_model", "whisper_device", "whisper_dir"]
+    keys = ["lang", "format", "timestamps", "chunk_size", "summarize_cmd", "summarize_prompt", "whisper_model", "whisper_device", "whisper_dir"]
     for key in keys:
         raw = config.get(key)
         resolved = resolve_value(None, config, key)
@@ -995,6 +1094,8 @@ def main() -> None:
     fmt = resolve_value(args.format, config, "format")
     timestamps = resolve_value(args.timestamps, config, "timestamps") or False
     chunk_size = resolve_value(args.chunk_size, config, "chunk_size")
+    summarize_cmd = resolve_value(args.summarize_cmd, config, "summarize_cmd")
+    summarize_prompt = resolve_value(args.summarize_prompt, config, "summarize_prompt")
     whisper_model = resolve_value(args.whisper_model, config, "whisper_model")
     whisper_dir = resolve_value(args.whisper_dir, config, "whisper_dir")
     whisper_device = resolve_value(args.whisper_device, config, "whisper_device")
@@ -1015,6 +1116,9 @@ def main() -> None:
             stdout_mode=args.stdout,
             timestamps=timestamps,
             chunk_size=chunk_size,
+            summarize=args.summarize,
+            summarize_cmd=summarize_cmd,
+            summarize_prompt=summarize_prompt,
         )
     except KeyboardInterrupt:
         print()

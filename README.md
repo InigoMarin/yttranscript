@@ -54,6 +54,10 @@ yttranscript URL --timestamps
 yttranscript URL --format json
 yttranscript URL --format json --chunk-size 60 --stdout | python ingest.py
 
+# Summarize with AI (pipes transcript to external command)
+yttranscript URL --summarize
+yttranscript URL --summarize --summarize-cmd "llama-cli -m model.gguf --temp 0.7"
+
 # Custom output filename
 yttranscript URL -o my_transcript
 
@@ -102,6 +106,9 @@ yttranscript URL --keep-vtt --keep-audio
 | `--keep-vtt` | Keep VTT file after text conversion |
 | `--keep-audio` | Keep audio file after Whisper transcription |
 | `--show-config` | Show current configuration and exit |
+| `--summarize` | Pipe transcript to external AI command for summarization |
+| `--summarize-cmd` | Command to pipe transcript to (config: `summarize_cmd`) |
+| `--summarize-prompt` | Prompt prepended to transcript (config: `summarize_prompt`) |
 | `-V, --version` | Show version |
 
 ### Whisper Models
@@ -126,6 +133,8 @@ lang = "es"
 format = "txt"
 timestamps = true
 chunk_size = 30
+# summarize_cmd = "llama-cli -m ~/.local/share/models/model.gguf --temp 0.7 -n 1024"
+# summarize_prompt = "Summarize this video in bullet points"
 whisper_model = "medium"
 whisper_device = "gpu"
 # whisper_dir = "/home/user/.cache/whisper"
@@ -175,7 +184,23 @@ yttranscript URL --stdout | grep -i "webhook"
 yttranscript URL --stdout | wl-copy
 ```
 
-## JSON Output for RAG
+## Summarization with AI
+
+```bash
+# Configure once in ~/.config/yttranscript/config.toml:
+#   summarize_cmd = "llama-cli -m model.gguf --temp 0.7 -n 1024"
+#   summarize_prompt = "Resume este video en puntos clave"
+
+# Then just:
+yttranscript URL --summarize
+
+# Or specify inline:
+yttranscript URL --summarize \
+  --summarize-cmd "llama-cli -m model.gguf --temp 0.7 -n 1024" \
+  --summarize-prompt "Resume en 5 bullets"
+```
+
+How it works: yttranscript downloads the transcript, extracts plain text, and pipes it as stdin to `summarize_cmd` with `summarize_prompt` prepended. Works with any CLI tool: llama.cpp, ollama, aichat, etc.
 
 ```bash
 yttranscript URL --format json --stdout
