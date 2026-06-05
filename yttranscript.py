@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 import argparse
 import os
@@ -198,6 +198,7 @@ def transcribe_with_whisper(
     language: str | None = None,
     keep_audio: bool = False,
     download_dir: str | None = None,
+    device: str = "gpu",
 ) -> bool:
     """Download audio and transcribe with Whisper. Returns True on success."""
     info_url = get_video_info(url)
@@ -239,14 +240,25 @@ def transcribe_with_whisper(
     success(f"Audio downloaded: {audio_file}")
 
     # Transcribe
-    info(f"Transcribing with Whisper (model: {model})... this may take a while.")
+    device_label = "GPU" if device == "gpu" else "CPU"
+    info(f"Transcribing with Whisper (model: {model}, {device_label})... this may take a while.")
     whisper_cmd = ["whisper", audio_file, "--model", model, "--output_format", "vtt"]
     if language:
         whisper_cmd.extend(["--language", language])
     if download_dir:
         whisper_cmd.extend(["--download_root", download_dir])
 
-    result = run(whisper_cmd, check=False)
+    # Force CPU by hiding CUDA devices
+    env = os.environ.copy()
+    if device == "cpu":
+        env["CUDA_VISIBLE_DEVICES"] = ""
+
+    result = subprocess.run(whisper_cmd, check=False, env=env)
+    if result.returncode != 0 and device == "gpu":
+        warn("GPU transcription failed (out of memory?). Falling back to CPU...")
+        env["CUDA_VISIBLE_DEVICES"] = ""
+        result = subprocess.run(whisper_cmd, check=False, env=env)
+
     if result.returncode != 0:
         error("Whisper transcription failed.")
         return False
@@ -338,6 +350,7 @@ def process_video(
     force_whisper: bool = False,
     whisper_model: str = "base",
     whisper_dir: str | None = None,
+    whisper_device: str = "gpu",
     keep_vtt: bool = False,
     keep_audio: bool = False,
     clipboard: bool = False,
@@ -424,6 +437,7 @@ def process_video(
     if not transcribe_with_whisper(
         url, video_title, model=whisper_model, language=lang,
         keep_audio=keep_audio, download_dir=whisper_dir,
+        device=whisper_device,
     ):
         error("Could not get transcript. The video may not have subtitles and transcription was not performed.")
         sys.exit(1)
@@ -515,6 +529,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory to store Whisper models (default: ~/.cache/whisper/).",
     )
     parser.add_argument(
+        "--whisper-device",
+        choices=["gpu", "cpu"],
+        default="gpu",
+        help="Device for Whisper transcription (default: gpu).",
+    )
+    parser.add_argument(
         "--keep-vtt",
         action="store_true",
         help="Keep the VTT file after converting to text.",
@@ -549,6 +569,7 @@ def main() -> None:
             force_whisper=args.whisper,
             whisper_model=args.whisper_model,
             whisper_dir=args.whisper_dir,
+            whisper_device=args.whisper_device,
             keep_vtt=args.keep_vtt,
             keep_audio=args.keep_audio,
             clipboard=args.clipboard,
