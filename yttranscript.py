@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.9.0"
+__version__ = "1.9.1"
 
 import argparse
 import os
@@ -487,6 +487,14 @@ def vtt_to_stdout(vtt_path: Path, video_info: dict | None = None) -> None:
 # Main logic
 # ---------------------------------------------------------------------------
 
+def cleanup_temp_files(video_title: str | None = None, keep_audio: bool = False) -> None:
+    """Remove leftover temp files from failed or interrupted runs."""
+    for f in Path(".").glob("transcript_temp*"):
+        f.unlink(missing_ok=True)
+    if video_title and not keep_audio:
+        for f in Path(".").glob(f"audio_{video_title}.*"):
+            f.unlink(missing_ok=True)
+
 def process_video(
     url: str,
     output: str | None = None,
@@ -541,118 +549,121 @@ def process_video(
     # Sanitize output name for use as prefix
     temp_prefix = "transcript_temp"
 
-    if not force_whisper:
-        # List available subs (only in verbose mode)
-        if VERBOSITY >= 2 and not stdout_mode:
-            info("Available subtitles:")
-            run(["yt-dlp", "--list-subs", url], check=False)
+    try:
+        if not force_whisper:
+            # List available subs (only in verbose mode)
+            if VERBOSITY >= 2 and not stdout_mode:
+                info("Available subtitles:")
+                run(["yt-dlp", "--list-subs", url], check=False)
 
-        # Strategy: try manual (lang variants → en fallback) → auto (same) → whisper
-        lang_variants = get_lang_variants(lang)
-        if lang.split("-")[0] != "en":
-            lang_variants.extend(get_lang_variants("en"))
-        downloaded = False
+            # Strategy: try manual (lang variants → en fallback) → auto (same) → whisper
+            lang_variants = get_lang_variants(lang)
+            if lang.split("-")[0] != "en":
+                lang_variants.extend(get_lang_variants("en"))
+            downloaded = False
 
-        for variant in lang_variants:
-            info(f"Trying manual subtitles ({variant})...")
-            if try_download_subtitle(url, temp_prefix, variant, use_auto=False):
-                downloaded = True
-                success("Manual subtitles downloaded!")
-                break
-
-        if not downloaded:
             for variant in lang_variants:
-                info(f"Trying auto-generated subtitles ({variant})...")
-                if try_download_subtitle(url, temp_prefix, variant, use_auto=True):
+                info(f"Trying manual subtitles ({variant})...")
+                if try_download_subtitle(url, temp_prefix, variant, use_auto=False):
                     downloaded = True
-                    success("Auto-generated subtitles downloaded!")
+                    success("Manual subtitles downloaded!")
                     break
 
-        if downloaded:
-            # Find the VTT file
-            vtt_files = list(Path(".").glob(f"{temp_prefix}*.vtt"))
-            if vtt_files:
-                vtt_file = vtt_files[0]
+            if not downloaded:
+                for variant in lang_variants:
+                    info(f"Trying auto-generated subtitles ({variant})...")
+                    if try_download_subtitle(url, temp_prefix, variant, use_auto=True):
+                        downloaded = True
+                        success("Auto-generated subtitles downloaded!")
+                        break
 
-                if stdout_mode:
+            if downloaded:
+                # Find the VTT file
+                vtt_files = list(Path(".").glob(f"{temp_prefix}*.vtt"))
+                if vtt_files:
+                    vtt_file = vtt_files[0]
+
+                    if stdout_mode:
+                        if fmt == "vtt":
+                            sys.stdout.write(vtt_file.read_text(encoding="utf-8"))
+                        else:
+                            vtt_to_stdout(vtt_file, {
+                                "title": video_title,
+                                "url": url,
+                                "duration": video_duration,
+                                "whisper": False,
+                            })
+                        vtt_file.unlink(missing_ok=True)
+                        return
+
+                    final_vtt = Path(f"{video_title}.vtt")
+                    vtt_file.rename(final_vtt)
+
                     if fmt == "vtt":
-                        sys.stdout.write(vtt_file.read_text(encoding="utf-8"))
+                        success(f"Saved: {final_vtt}")
                     else:
-                        vtt_to_stdout(vtt_file, {
+                        # Convert to plain text
+                        info("Converting to plain text (deduplicating lines)...")
+                        txt_output = Path(f"{video_title}.txt")
+                        vtt_to_text(final_vtt, txt_output, {
                             "title": video_title,
                             "url": url,
                             "duration": video_duration,
                             "whisper": False,
                         })
-                    vtt_file.unlink(missing_ok=True)
+                        success(f"Saved: {txt_output}")
+
+                        if keep_vtt:
+                            info(f"VTT kept at: {final_vtt}")
+                        else:
+                            final_vtt.unlink(missing_ok=True)
+
                     return
 
-                final_vtt = Path(f"{video_title}.vtt")
-                vtt_file.rename(final_vtt)
+            warn("No subtitles available.")
+        else:
+            warn("Forcing Whisper transcription (--whisper flag).")
 
+        # Last resort: Whisper
+        if not transcribe_with_whisper(
+            url, video_title, model=whisper_model, language=lang,
+            keep_audio=keep_audio, download_dir=whisper_dir,
+            device=whisper_device, quiet=stdout_mode or VERBOSITY == 0,
+        ):
+            error("Could not get transcript. The video may not have subtitles and transcription was not performed.")
+            sys.exit(1)
+
+        # Post-process Whisper output
+        vtt_file = Path(f"{video_title}.vtt")
+        if vtt_file.exists():
+            if stdout_mode:
                 if fmt == "vtt":
-                    success(f"Saved: {final_vtt}")
+                    sys.stdout.write(vtt_file.read_text(encoding="utf-8"))
                 else:
-                    # Convert to plain text
-                    info("Converting to plain text (deduplicating lines)...")
-                    txt_output = Path(f"{video_title}.txt")
-                    vtt_to_text(final_vtt, txt_output, {
+                    vtt_to_stdout(vtt_file, {
                         "title": video_title,
                         "url": url,
                         "duration": video_duration,
-                        "whisper": False,
+                        "whisper": True,
                     })
-                    success(f"Saved: {txt_output}")
-
-                    if keep_vtt:
-                        info(f"VTT kept at: {final_vtt}")
-                    else:
-                        final_vtt.unlink(missing_ok=True)
-
-                return
-
-        warn("No subtitles available.")
-    else:
-        warn("Forcing Whisper transcription (--whisper flag).")
-
-    # Last resort: Whisper
-    if not transcribe_with_whisper(
-        url, video_title, model=whisper_model, language=lang,
-        keep_audio=keep_audio, download_dir=whisper_dir,
-        device=whisper_device, quiet=stdout_mode or VERBOSITY == 0,
-    ):
-        error("Could not get transcript. The video may not have subtitles and transcription was not performed.")
-        sys.exit(1)
-
-    # Post-process Whisper output
-    vtt_file = Path(f"{video_title}.vtt")
-    if vtt_file.exists():
-        if stdout_mode:
-            if fmt == "vtt":
-                sys.stdout.write(vtt_file.read_text(encoding="utf-8"))
+                vtt_file.unlink(missing_ok=True)
+            elif fmt == "vtt":
+                success(f"Saved: {vtt_file}")
             else:
-                vtt_to_stdout(vtt_file, {
+                info("Converting to plain text...")
+                txt_output = Path(f"{video_title}.txt")
+                vtt_to_text(vtt_file, txt_output, {
                     "title": video_title,
                     "url": url,
                     "duration": video_duration,
                     "whisper": True,
                 })
-            vtt_file.unlink(missing_ok=True)
-        elif fmt == "vtt":
-            success(f"Saved: {vtt_file}")
-        else:
-            info("Converting to plain text...")
-            txt_output = Path(f"{video_title}.txt")
-            vtt_to_text(vtt_file, txt_output, {
-                "title": video_title,
-                "url": url,
-                "duration": video_duration,
-                "whisper": True,
-            })
-            success(f"Saved: {txt_output}")
+                success(f"Saved: {txt_output}")
 
-            if not keep_vtt:
-                vtt_file.unlink(missing_ok=True)
+                if not keep_vtt:
+                    vtt_file.unlink(missing_ok=True)
+    finally:
+        cleanup_temp_files(video_title, keep_audio)
 
 
 # ---------------------------------------------------------------------------
