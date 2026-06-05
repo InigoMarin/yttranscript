@@ -88,19 +88,6 @@ def confirm(prompt: str, default: bool = False) -> bool:
     return answer in ("y", "yes")
 
 
-def copy_to_clipboard(text: str) -> bool:
-    """Copy text to system clipboard. Returns True on success."""
-    for cmd in (["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]):
-        if command_exists(cmd[0]):
-            try:
-                proc = subprocess.run(cmd, input=text, text=True, check=True)
-                return True
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                return False
-    warn("No clipboard tool found. Install one of: wl-copy, xclip, xsel")
-    return False
-
-
 DEFAULT_CONFIG = """\
 # yttranscript configuration
 # Uncomment and edit the lines below to set your defaults.
@@ -482,7 +469,6 @@ def process_video(
     whisper_device: str = "gpu",
     keep_vtt: bool = False,
     keep_audio: bool = False,
-    clipboard: bool = False,
     stdout_mode: bool = False,
 ) -> None:
     """Main processing pipeline."""
@@ -582,10 +568,6 @@ def process_video(
                     })
                     success(f"Saved: {txt_output}")
 
-                    if clipboard:
-                        copy_to_clipboard(txt_output.read_text(encoding="utf-8"))
-                        success("Copied to clipboard.")
-
                     if keep_vtt:
                         info(f"VTT kept at: {final_vtt}")
                     else:
@@ -632,10 +614,6 @@ def process_video(
                 "whisper": True,
             })
             success(f"Saved: {txt_output}")
-
-            if clipboard:
-                copy_to_clipboard(txt_output.read_text(encoding="utf-8"))
-                success("Copied to clipboard.")
 
             if not keep_vtt:
                 vtt_file.unlink(missing_ok=True)
@@ -721,11 +699,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Keep the audio file after Whisper transcription.",
     )
     parser.add_argument(
-        "-c", "--clipboard",
-        action="store_true",
-        help="Copy transcript to system clipboard.",
-    )
-    parser.add_argument(
         "--stdout",
         action="store_true",
         help="Output transcript to stdout (for piping). No file saved.",
@@ -787,7 +760,6 @@ def main() -> None:
             whisper_device=whisper_device,
             keep_vtt=args.keep_vtt,
             keep_audio=args.keep_audio,
-            clipboard=args.clipboard,
             stdout_mode=args.stdout,
         )
     except KeyboardInterrupt:
