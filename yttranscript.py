@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 import argparse
 import os
@@ -223,7 +223,8 @@ def transcribe_with_whisper(
     info("Downloading audio...")
     audio_template = f"audio_{output_name}.%(ext)s"
     result = run(
-        ["yt-dlp", "-x", "--audio-format", "mp3", "--output", audio_template, url],
+        ["yt-dlp", "-x", "--audio-format", "mp3", "-f", "bestaudio",
+         "--output", audio_template, url],
         check=False,
     )
     if result.returncode != 0:
