@@ -1,6 +1,6 @@
 .PHONY: all pkg install clean help
 
-VERSION := 1.2.1
+VERSION := 1.2.2
 PKGNAME := yttranscript
 TARBALL := $(PKGNAME)-$(VERSION).tar.gz
 SRC_DIR := $(PKGNAME)-$(VERSION)
