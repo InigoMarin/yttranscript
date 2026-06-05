@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.6.0"
+__version__ = "1.7.0"
 
 import argparse
 import os
@@ -64,10 +64,12 @@ def error(msg: str) -> None:
     print(f"{Colors.RED}✗{Colors.RESET} {msg}", file=sys.stderr)
 
 
-def run(cmd: list[str], check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
-    """Run a command and optionally capture output."""
+def run(cmd: list[str], check: bool = True, capture: bool = False, quiet: bool = False) -> subprocess.CompletedProcess:
+    """Run a command and optionally capture/suppress output."""
     if capture:
         return subprocess.run(cmd, capture_output=True, text=True, check=check)
+    if quiet:
+        return subprocess.run(cmd, check=check, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return subprocess.run(cmd, check=check)
 
 
@@ -153,7 +155,8 @@ def detect_video_language(url: str) -> str | None:
     lang = result.stdout.strip()
     if not lang or lang == "NA":
         return None
-    return lang
+    # Normalize: "en-US" → "en"
+    return lang.split("-")[0]
 
 
 # ---------------------------------------------------------------------------
@@ -275,18 +278,19 @@ def transcribe_with_whisper(
     keep_audio: bool = False,
     download_dir: str | None = None,
     device: str = "gpu",
+    quiet: bool = False,
 ) -> bool:
     """Download audio and transcribe with Whisper. Returns True on success."""
     info_url = get_video_info(url)
     size_mb = info_url["size"] // (1024 * 1024) if info_url["size"] else 0
     duration_min = info_url["duration"] // 60
 
-    print()
-    print(f"  {Colors.BOLD}Video:{Colors.RESET} {info_url['title']}")
-    print(f"  {Colors.BOLD}Duration:{Colors.RESET} ~{duration_min} min")
+    print(file=sys.stderr if quiet else sys.stdout)
+    print(f"  {Colors.BOLD}Video:{Colors.RESET} {info_url['title']}", file=sys.stderr if quiet else sys.stdout)
+    print(f"  {Colors.BOLD}Duration:{Colors.RESET} ~{duration_min} min", file=sys.stderr if quiet else sys.stdout)
     if size_mb:
-        print(f"  {Colors.BOLD}Audio size:{Colors.RESET} ~{size_mb} MB")
-    print()
+        print(f"  {Colors.BOLD}Audio size:{Colors.RESET} ~{size_mb} MB", file=sys.stderr if quiet else sys.stdout)
+    print(file=sys.stderr if quiet else sys.stdout)
 
     if not ensure_whisper():
         error("Cannot proceed without Whisper.")
@@ -298,7 +302,7 @@ def transcribe_with_whisper(
     result = run(
         ["yt-dlp", "-x", "--audio-format", "mp3", "-f", "bestaudio",
          "--output", audio_template, url],
-        check=False,
+        check=False, quiet=quiet,
     )
     if result.returncode != 0:
         error("Failed to download audio.")
@@ -413,6 +417,55 @@ def vtt_to_text(vtt_path: Path, output_path: Path, video_info: dict | None = Non
         f.write("\n")
 
 
+def vtt_to_stdout(vtt_path: Path, video_info: dict | None = None) -> None:
+    """Convert VTT to plain text and print to stdout."""
+    seen: set[str] = set()
+    lines: list[str] = []
+
+    with open(vtt_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("WEBVTT"):
+                continue
+            if line.startswith("Kind:"):
+                continue
+            if line.startswith("Language:"):
+                continue
+            if "-->" in line:
+                continue
+            if line.isdigit():
+                continue
+
+            clean = re.sub(r"<[^>]*>", "", line)
+            clean = (
+                clean.replace("&amp;", "&")
+                .replace("&gt;", ">")
+                .replace("&lt;", "<")
+                .replace("&#39;", "'")
+                .replace("&quot;", '"')
+            )
+            clean = clean.strip()
+            if clean and clean not in seen:
+                seen.add(clean)
+                lines.append(clean)
+
+    if video_info:
+        duration = video_info.get("duration", 0)
+        duration_str = f"{duration // 60}:{duration % 60:02d}" if duration else "unknown"
+        header = (
+            f"Title: {video_info.get('title', 'unknown')}\n"
+            f"URL: {video_info.get('url', 'unknown')}\n"
+            f"Duration: {duration_str}\n"
+            f"Transcribed: {'Whisper' if video_info.get('whisper') else 'YouTube subtitles'}\n"
+            f"\n{'─' * 60}\n\n"
+        )
+        sys.stdout.write(header)
+    sys.stdout.write("\n".join(lines))
+    sys.stdout.write("\n")
+
+
 # ---------------------------------------------------------------------------
 # Main logic
 # ---------------------------------------------------------------------------
@@ -430,9 +483,20 @@ def process_video(
     keep_vtt: bool = False,
     keep_audio: bool = False,
     clipboard: bool = False,
+    stdout_mode: bool = False,
 ) -> None:
     """Main processing pipeline."""
     ensure_yt_dlp()
+
+    # Redirect info messages to stderr when piping to stdout
+    if stdout_mode:
+        global info, success, warn
+        def _info(msg): print(f"{Colors.BLUE}›{Colors.RESET} {msg}", file=sys.stderr)
+        def _success(msg): print(f"{Colors.GREEN}✓{Colors.RESET} {msg}", file=sys.stderr)
+        def _warn(msg): print(f"{Colors.YELLOW}⚠{Colors.RESET} {msg}", file=sys.stderr)
+        info = _info
+        success = _success
+        warn = _warn
 
     if list_only:
         list_subs(url)
@@ -464,7 +528,7 @@ def process_video(
     if not force_whisper:
         # List available subs (informational)
         info("Checking available subtitles...")
-        run(["yt-dlp", "--list-subs", url], check=False)
+        run(["yt-dlp", "--list-subs", url], check=False, capture=stdout_mode, quiet=stdout_mode)
 
         # Strategy: try manual → auto → whisper
         downloaded = False
@@ -487,6 +551,20 @@ def process_video(
             vtt_files = list(Path(".").glob(f"{temp_prefix}*.vtt"))
             if vtt_files:
                 vtt_file = vtt_files[0]
+
+                if stdout_mode:
+                    if fmt == "vtt":
+                        sys.stdout.write(vtt_file.read_text(encoding="utf-8"))
+                    else:
+                        vtt_to_stdout(vtt_file, {
+                            "title": video_title,
+                            "url": url,
+                            "duration": video_duration,
+                            "whisper": False,
+                        })
+                    vtt_file.unlink(missing_ok=True)
+                    return
+
                 final_vtt = Path(f"{video_title}.vtt")
                 vtt_file.rename(final_vtt)
 
@@ -523,7 +601,7 @@ def process_video(
     if not transcribe_with_whisper(
         url, video_title, model=whisper_model, language=lang,
         keep_audio=keep_audio, download_dir=whisper_dir,
-        device=whisper_device,
+        device=whisper_device, quiet=stdout_mode,
     ):
         error("Could not get transcript. The video may not have subtitles and transcription was not performed.")
         sys.exit(1)
@@ -531,7 +609,18 @@ def process_video(
     # Post-process Whisper output
     vtt_file = Path(f"{video_title}.vtt")
     if vtt_file.exists():
-        if fmt == "vtt":
+        if stdout_mode:
+            if fmt == "vtt":
+                sys.stdout.write(vtt_file.read_text(encoding="utf-8"))
+            else:
+                vtt_to_stdout(vtt_file, {
+                    "title": video_title,
+                    "url": url,
+                    "duration": video_duration,
+                    "whisper": True,
+                })
+            vtt_file.unlink(missing_ok=True)
+        elif fmt == "vtt":
             success(f"Saved: {vtt_file}")
         else:
             info("Converting to plain text...")
@@ -637,6 +726,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Copy transcript to system clipboard.",
     )
     parser.add_argument(
+        "--stdout",
+        action="store_true",
+        help="Output transcript to stdout (for piping). No file saved.",
+    )
+    parser.add_argument(
         "--show-config",
         action="store_true",
         help="Show current configuration and exit.",
@@ -694,6 +788,7 @@ def main() -> None:
             keep_vtt=args.keep_vtt,
             keep_audio=args.keep_audio,
             clipboard=args.clipboard,
+            stdout_mode=args.stdout,
         )
     except KeyboardInterrupt:
         print()
