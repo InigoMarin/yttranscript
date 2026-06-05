@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 import argparse
 import os
@@ -65,6 +65,19 @@ def confirm(prompt: str, default: bool = False) -> bool:
     if not answer:
         return default
     return answer in ("y", "yes")
+
+
+def copy_to_clipboard(text: str) -> bool:
+    """Copy text to system clipboard. Returns True on success."""
+    for cmd in (["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]):
+        if command_exists(cmd[0]):
+            try:
+                proc = subprocess.run(cmd, input=text, text=True, check=True)
+                return True
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                return False
+    warn("No clipboard tool found. Install one of: wl-copy, xclip, xsel")
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -319,6 +332,7 @@ def process_video(
     whisper_dir: str | None = None,
     keep_vtt: bool = False,
     keep_audio: bool = False,
+    clipboard: bool = False,
 ) -> None:
     """Main processing pipeline."""
     ensure_yt_dlp()
@@ -376,6 +390,10 @@ def process_video(
                     vtt_to_text(final_vtt, txt_output)
                     success(f"Saved: {txt_output}")
 
+                    if clipboard:
+                        copy_to_clipboard(txt_output.read_text(encoding="utf-8"))
+                        success("Copied to clipboard.")
+
                     if keep_vtt:
                         info(f"VTT kept at: {final_vtt}")
                     else:
@@ -405,6 +423,10 @@ def process_video(
             txt_output = Path(f"{video_title}.txt")
             vtt_to_text(vtt_file, txt_output)
             success(f"Saved: {txt_output}")
+
+            if clipboard:
+                copy_to_clipboard(txt_output.read_text(encoding="utf-8"))
+                success("Copied to clipboard.")
 
             if not keep_vtt:
                 vtt_file.unlink(missing_ok=True)
@@ -482,6 +504,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Keep the audio file after Whisper transcription.",
     )
+    parser.add_argument(
+        "-c", "--clipboard",
+        action="store_true",
+        help="Copy transcript to system clipboard.",
+    )
     return parser
 
 
@@ -504,6 +531,7 @@ def main() -> None:
             whisper_dir=args.whisper_dir,
             keep_vtt=args.keep_vtt,
             keep_audio=args.keep_audio,
+            clipboard=args.clipboard,
         )
     except KeyboardInterrupt:
         print()
