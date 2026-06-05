@@ -283,12 +283,14 @@ def transcribe_with_whisper(
     size_mb = info_url["size"] // (1024 * 1024) if info_url["size"] else 0
     duration_min = info_url["duration"] // 60
 
-    print(file=sys.stderr if quiet else sys.stdout)
-    print(f"  {Colors.BOLD}Video:{Colors.RESET} {info_url['title']}", file=sys.stderr if quiet else sys.stdout)
-    print(f"  {Colors.BOLD}Duration:{Colors.RESET} ~{duration_min} min", file=sys.stderr if quiet else sys.stdout)
-    if size_mb:
-        print(f"  {Colors.BOLD}Audio size:{Colors.RESET} ~{size_mb} MB", file=sys.stderr if quiet else sys.stdout)
-    print(file=sys.stderr if quiet else sys.stdout)
+    suppress = quiet or VERBOSITY == 0
+    if not suppress:
+        print()
+        print(f"  {Colors.BOLD}Video:{Colors.RESET} {info_url['title']}")
+        print(f"  {Colors.BOLD}Duration:{Colors.RESET} ~{duration_min} min")
+        if size_mb:
+            print(f"  {Colors.BOLD}Audio size:{Colors.RESET} ~{size_mb} MB")
+        print()
 
     if not ensure_whisper():
         error("Cannot proceed without Whisper.")
@@ -331,11 +333,16 @@ def transcribe_with_whisper(
     if device == "cpu":
         env["CUDA_VISIBLE_DEVICES"] = ""
 
-    result = subprocess.run(whisper_cmd, check=False, env=env)
+    whisper_kwargs: dict = {"check": False, "env": env}
+    if suppress:
+        whisper_kwargs["stdout"] = subprocess.DEVNULL
+        whisper_kwargs["stderr"] = subprocess.DEVNULL
+
+    result = subprocess.run(whisper_cmd, **whisper_kwargs)
     if result.returncode != 0 and device == "gpu":
         warn("GPU transcription failed (out of memory?). Falling back to CPU...")
         env["CUDA_VISIBLE_DEVICES"] = ""
-        result = subprocess.run(whisper_cmd, check=False, env=env)
+        result = subprocess.run(whisper_cmd, **whisper_kwargs)
 
     if result.returncode != 0:
         error("Whisper transcription failed.")
@@ -595,7 +602,7 @@ def process_video(
     if not transcribe_with_whisper(
         url, video_title, model=whisper_model, language=lang,
         keep_audio=keep_audio, download_dir=whisper_dir,
-        device=whisper_device, quiet=stdout_mode,
+        device=whisper_device, quiet=stdout_mode or VERBOSITY == 0,
     ):
         error("Could not get transcript. The video may not have subtitles and transcription was not performed.")
         sys.exit(1)
