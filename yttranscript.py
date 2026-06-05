@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.8.2"
+__version__ = "1.9.0"
 
 import argparse
 import os
@@ -139,6 +139,18 @@ def resolve_value(arg_value, config: dict, key: str):
     if arg_value is not None:
         return arg_value
     return config.get(key, DEFAULTS.get(key))
+
+
+def get_lang_variants(lang: str) -> list[str]:
+    """Generate language code variants to try for subtitle download.
+
+    Tries the exact code first, then falls back to a wildcard pattern
+    to catch YouTube-specific variants like es-orig, es-en, etc.
+    """
+    base = lang.split("-")[0]
+    if base != lang:
+        return [lang, base, f"{base}.*"]
+    return [lang, f"{lang}.*"]
 
 
 def detect_video_language(url: str) -> str | None:
@@ -535,21 +547,24 @@ def process_video(
             info("Available subtitles:")
             run(["yt-dlp", "--list-subs", url], check=False)
 
-        # Strategy: try manual → auto → whisper
+        # Strategy: try manual (lang variants) → auto (lang variants) → whisper
+        lang_variants = get_lang_variants(lang)
         downloaded = False
-        sub_type = None
 
-        info("Trying manual subtitles...")
-        if try_download_subtitle(url, temp_prefix, lang, use_auto=False):
-            downloaded = True
-            sub_type = "manual"
-            success("Manual subtitles downloaded!")
-        else:
-            info("Manual subtitles not available. Trying auto-generated...")
-            if try_download_subtitle(url, temp_prefix, lang, use_auto=True):
+        for variant in lang_variants:
+            info(f"Trying manual subtitles ({variant})...")
+            if try_download_subtitle(url, temp_prefix, variant, use_auto=False):
                 downloaded = True
-                sub_type = "auto"
-                success("Auto-generated subtitles downloaded!")
+                success("Manual subtitles downloaded!")
+                break
+
+        if not downloaded:
+            for variant in lang_variants:
+                info(f"Trying auto-generated subtitles ({variant})...")
+                if try_download_subtitle(url, temp_prefix, variant, use_auto=True):
+                    downloaded = True
+                    success("Auto-generated subtitles downloaded!")
+                    break
 
         if downloaded:
             # Find the VTT file
