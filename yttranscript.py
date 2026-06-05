@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.7.1"
+__version__ = "1.8.0"
 
 import argparse
 import os
@@ -39,6 +39,8 @@ DEFAULTS = {
 # Helpers
 # ---------------------------------------------------------------------------
 
+VERBOSITY = 1  # 0=quiet, 1=normal, 2=verbose
+
 class Colors:
     RED = "\033[91m"
     GREEN = "\033[92m"
@@ -49,26 +51,35 @@ class Colors:
 
 
 def info(msg: str) -> None:
-    print(f"{Colors.BLUE}›{Colors.RESET} {msg}")
+    if VERBOSITY >= 1:
+        print(f"{Colors.BLUE}›{Colors.RESET} {msg}")
 
 
 def success(msg: str) -> None:
-    print(f"{Colors.GREEN}✓{Colors.RESET} {msg}")
+    if VERBOSITY >= 1:
+        print(f"{Colors.GREEN}✓{Colors.RESET} {msg}")
 
 
 def warn(msg: str) -> None:
-    print(f"{Colors.YELLOW}⚠{Colors.RESET} {msg}")
+    if VERBOSITY >= 1:
+        print(f"{Colors.YELLOW}⚠{Colors.RESET} {msg}")
 
 
 def error(msg: str) -> None:
     print(f"{Colors.RED}✗{Colors.RESET} {msg}", file=sys.stderr)
 
 
+def debug(msg: str) -> None:
+    if VERBOSITY >= 2:
+        print(f"{Colors.BLUE}𝒹{Colors.RESET} {msg}", file=sys.stderr)
+
+
 def run(cmd: list[str], check: bool = True, capture: bool = False, quiet: bool = False) -> subprocess.CompletedProcess:
     """Run a command and optionally capture/suppress output."""
+    debug(f"$ {' '.join(cmd)}")
     if capture:
         return subprocess.run(cmd, capture_output=True, text=True, check=check)
-    if quiet:
+    if quiet or VERBOSITY == 0:
         return subprocess.run(cmd, check=check, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return subprocess.run(cmd, check=check)
 
@@ -514,7 +525,8 @@ def process_video(
     if not force_whisper:
         # List available subs (informational)
         info("Checking available subtitles...")
-        run(["yt-dlp", "--list-subs", url], check=False, capture=stdout_mode, quiet=stdout_mode)
+        if VERBOSITY >= 1 and not stdout_mode:
+            run(["yt-dlp", "--list-subs", url], check=False)
 
         # Strategy: try manual → auto → whisper
         downloaded = False
@@ -647,6 +659,16 @@ def build_parser() -> argparse.ArgumentParser:
         version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="Suppress all output except errors.",
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Show debug output (commands, yt-dlp/whisper output).",
+    )
+    parser.add_argument(
         "-o", "--output",
         help="Output filename (without extension). Default: video title.",
     )
@@ -729,9 +751,15 @@ def show_config() -> None:
 
 
 def main() -> None:
+    global VERBOSITY
     ensure_config_dir()
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.quiet:
+        VERBOSITY = 0
+    elif args.verbose:
+        VERBOSITY = 2
 
     if args.show_config:
         show_config()
