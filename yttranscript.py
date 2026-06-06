@@ -654,20 +654,37 @@ def _extract_vtt_plain_text(vtt_path: Path) -> str:
 
 
 def summarize_text(text: str, cmd: str, prompt: str) -> bool:
-    """Pipe text to an external command for summarization."""
+    """Send text to an external command for summarization.
+
+    Uses -p flag to pass the prompt directly (more reliable than stdin,
+    which can hang in llama-cli conversation mode). Falls back to stdin
+    if the user's command already includes -p or --prompt.
+    """
     full_input = f"{prompt}\n\n{text}"
     cmd_parts = shlex.split(cmd)
     cmd_parts = [os.path.expandvars(os.path.expanduser(p)) for p in cmd_parts]
-    debug(f"$ echo '...' | {' '.join(cmd_parts)}")
+
+    has_prompt_flag = any(p in ("-p", "--prompt") for p in cmd_parts)
+    if has_prompt_flag:
+        debug(f"$ echo '...' | {' '.join(cmd_parts)}")
+        run_kwargs: dict = {"input": full_input}
+    else:
+        cmd_parts.extend(["-p", full_input])
+        debug(f"$ {' '.join(cmd_parts[:4])}... -p '...'")
+        run_kwargs = {}
 
     try:
         result = subprocess.run(
             cmd_parts,
-            input=full_input,
             capture_output=True,
             text=True,
             check=False,
+            timeout=300,
+            **run_kwargs,
         )
+    except subprocess.TimeoutExpired:
+        error("Summarize command timed out after 5 minutes.")
+        return False
     except FileNotFoundError:
         error(f"Summarize command not found: {cmd_parts[0]}")
         return False
