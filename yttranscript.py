@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.18.0"
+__version__ = "1.19.0"
 
 import argparse
 import io
@@ -786,6 +786,7 @@ WEB_HTML = r"""<!DOCTYPE html>
   .row { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; align-items: center; }
   select, input[type="checkbox"] { accent-color: var(--accent); }
   select { padding: 0.5rem; border-radius: 6px; background: #0f0f0f; color: var(--text); border: 1px solid #334155; }
+  .lang-input { width: 5rem; padding: 0.35rem 0.5rem; border-radius: 6px; background: #0f0f0f; color: var(--text); border: 1px solid #334155; font-size: 0.875rem; }
   label { font-size: 0.875rem; color: var(--muted); display: flex; align-items: center; gap: 0.25rem; }
   button { padding: 0.75rem 2rem; border-radius: 8px; border: none; background: var(--accent); color: white; font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
   button:hover { opacity: 0.85; }
@@ -815,7 +816,7 @@ WEB_HTML = r"""<!DOCTYPE html>
   <div class="card">
     <input type="text" id="url" placeholder="Paste YouTube URL..." />
     <div class="row">
-      <label>Lang <select id="lang"><option value="">Auto</option><option value="en">en</option><option value="es">es</option><option value="fr">fr</option><option value="de">de</option><option value="pt">pt</option><option value="it">it</option><option value="ja">ja</option></select></label>
+      <label>Lang <input type="text" id="lang" list="lang-codes" placeholder="Auto" class="lang-input"><datalist id="lang-codes"><option value="en"><option value="es"><option value="fr"><option value="de"><option value="pt"><option value="it"><option value="ja"><option value="zh"><option value="ko"><option value="ar"><option value="ru"><option value="nl"><option value="pl"><option value="tr"></datalist></label>
       <label>Format <select id="format"><option value="txt">txt</option><option value="json">json</option><option value="vtt">vtt</option></select></label>
       <label><input type="checkbox" id="timestamps"> Timestamps</label>
       <label><input type="checkbox" id="summarize"> Summarize</label>
@@ -824,7 +825,7 @@ WEB_HTML = r"""<!DOCTYPE html>
       <button id="btn" onclick="run()">Transcribe</button>
       <div id="download-row">
         <button onclick="copyText()" id="copy-btn">Copy</button>
-        <a id="download-link" download><button onclick="document.getElementById('download-link').click()">Download</button></a>
+        <button onclick="downloadFile()" id="dl-btn">Download</button>
       </div>
     </div>
     <div id="status"></div>
@@ -834,6 +835,7 @@ WEB_HTML = r"""<!DOCTYPE html>
   </div>
 </div>
 <script>
+let lastResult = null;
 function escapeHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
@@ -896,6 +898,7 @@ async function run() {
     } else {
       setStatus(data.title, 'ok');
       outputCard.style.display = 'block';
+      lastResult = { text: data.text, filename: data.filename || 'transcript.txt' };
       if ((fmt === 'txt' || summarize) && fmt !== 'json' && fmt !== 'vtt') {
         result.className = 'md';
         result.innerHTML = renderMarkdown(data.text);
@@ -903,10 +906,7 @@ async function run() {
         result.className = 'plain';
         result.textContent = data.text;
       }
-      if (data.download) {
-        dlRow.style.display = 'flex';
-        document.getElementById('download-link').href = data.download;
-      }
+      dlRow.style.display = 'flex';
     }
   } catch (e) {
     setStatus('Request failed: ' + e.message, 'error');
@@ -922,6 +922,17 @@ async function copyText() {
   const btn = document.getElementById('copy-btn');
   btn.textContent = 'Copied!';
   setTimeout(() => btn.textContent = 'Copy', 1500);
+}
+function downloadFile() {
+  if (!lastResult) return;
+  const ext = lastResult.filename.split('.').pop();
+  const mime = ext === 'json' ? 'application/json' : ext === 'vtt' ? 'text/vtt' : 'text/plain';
+  const blob = new Blob([lastResult.text], { type: mime + ';charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = lastResult.filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 </script>
 </body>
@@ -942,28 +953,8 @@ class TranscriptHandler(BaseHTTPRequestHandler):
             self._serve_html()
         elif parsed.path == "/api":
             self._serve_api(parsed.query)
-        elif parsed.path.startswith("/download/"):
-            self._serve_download(parsed.path[len("/download/"):])
         else:
             self.send_error(404)
-
-    def _serve_download(self, filename):
-        cache_dir = (Path.home() / ".cache" / "yttranscript").resolve()
-        filepath = (cache_dir / urllib.parse.unquote(filename)).resolve()
-        if not filepath.is_relative_to(cache_dir) or not filepath.exists():
-            self.send_error(404)
-            return
-        if filepath.suffix == ".json":
-            content_type = "application/json"
-        elif filepath.suffix == ".vtt":
-            content_type = "text/vtt"
-        else:
-            content_type = "text/plain"
-        self.send_response(200)
-        self.send_header("Content-Type", f"{content_type}; charset=utf-8")
-        self.send_header("Content-Disposition", f'attachment; filename="{filepath.name}"')
-        self.end_headers()
-        self.wfile.write(filepath.read_bytes())
 
     def _serve_html(self):
         self.send_response(200)
@@ -1013,16 +1004,10 @@ class TranscriptHandler(BaseHTTPRequestHandler):
         except Exception:
             pass
 
-        download = None
-        ext = {"json": ".json", "txt": ".txt", "vtt": ".vtt"}.get(fmt)
-        if ext:
-            safe_title = _sanitize_filename(title)
-            download_path = Path.home() / ".cache" / "yttranscript" / f"{safe_title}{ext}"
-            download_path.parent.mkdir(parents=True, exist_ok=True)
-            download_path.write_text(text, encoding="utf-8")
-            download = f"/download/{urllib.parse.quote(safe_title)}{ext}"
+        ext = {"json": ".json", "txt": ".txt", "vtt": ".vtt"}.get(fmt, ".txt")
+        filename = _sanitize_filename(title) + ext
 
-        self._json_response({"title": title, "text": text, "download": download})
+        self._json_response({"title": title, "text": text, "filename": filename})
 
     def _json_response(self, data):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
