@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.14.2"
+__version__ = "1.14.3"
 
 import argparse
 import io
@@ -678,7 +678,7 @@ def summarize_text(text: str, cmd: str, prompt: str) -> bool:
                 cmd_parts,
                 input=full_input,
                 stdout=stdout_file,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
                 text=True,
                 check=False,
                 timeout=300,
