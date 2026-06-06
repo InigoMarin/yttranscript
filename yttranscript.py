@@ -51,8 +51,8 @@ _CONFIG_HIDDEN = {"output", "port"}
 
 _CONFIG_EXAMPLES = {
     "lang": "es",
-    "summarize_cmd": "llama-cli -m ~/.local/share/models/model.gguf --single-turn --temp 0.7 -n 1024",
-    "summarize_prompt": "Resume el video",
+    "summarize_cmd": "llama-cli -m ~/models/gemma-4-E2B-it-NVFP4.gguf -ngl 99 -fa 1 -ub 1024 -b 1024 --single-turn",
+    "summarize_prompt": "Resume el video en castellano. Formatealo para que sea facil de leer y respete la normativa de markdown",
     "whisper_dir": "/home/user/.cache/whisper",
 }
 
