@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.13.3"
+__version__ = "1.14.0"
 
 import argparse
 import io
@@ -119,7 +119,7 @@ DEFAULT_CONFIG = """\
 # timestamps = true
 # chunk_size = 30
 # summarize_cmd = "llama-cli -m ~/.local/share/models/model.gguf --single-turn --temp 0.7 -n 1024"
-# summarize_prompt = "Summarize this video in bullet points"
+# summarize_prompt = "Resume el video"
 # whisper_model = "base"
 # whisper_device = "gpu"
 # whisper_dir = "/home/user/.cache/whisper"
@@ -654,21 +654,24 @@ def _extract_vtt_plain_text(vtt_path: Path) -> str:
 
 
 def summarize_text(text: str, cmd: str, prompt: str) -> bool:
-    """Send text to an external command for summarization via stdin.
+    """Send text to an external command for summarization.
 
-    Output flows directly to the terminal (no capture) so the user sees
-    model loading and response in real-time.
+    Wraps transcript in <data> tags and instructs the model to respond
+    between <summary> tags. Captures stdout and extracts only the summary.
     """
-    full_input = f"{prompt} {text}"
+    full_input = f"{prompt} Responde entre <summary> y </summary>. <data>{text}</data>"
     cmd_parts = shlex.split(cmd)
     cmd_parts = [os.path.expandvars(os.path.expanduser(p)) for p in cmd_parts]
 
     debug(f"$ echo '...' | {' '.join(cmd_parts[:4])}...")
+    info("Summarizing... (this may take a while)")
 
     try:
         result = subprocess.run(
             cmd_parts,
             input=full_input,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             text=True,
             check=False,
             timeout=300,
@@ -683,6 +686,26 @@ def summarize_text(text: str, cmd: str, prompt: str) -> bool:
     if result.returncode != 0:
         error("Summarize command failed.")
         return False
+
+    output = result.stdout.strip()
+    if not output:
+        error("Summarize command produced no output.")
+        return False
+
+    # Extract <summary>...</summary> if present
+    summary_match = re.search(r"<summary>(.*?)</summary>", output, re.DOTALL)
+    if summary_match:
+        print(summary_match.group(1).strip())
+    else:
+        # Fallback: strip [Start thinking]...[End thinking] blocks
+        clean = re.sub(r"\[Start thinking\].*?\[End thinking\]", "", output, flags=re.DOTALL)
+        # Remove prompt echo line (> ...)
+        clean = re.sub(r"^> .*$", "", clean, flags=re.MULTILINE)
+        clean = clean.strip()
+        if clean:
+            print(clean)
+        else:
+            print(output)
 
     return True
 
