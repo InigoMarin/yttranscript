@@ -728,6 +728,7 @@ WEB_HTML = """<!DOCTYPE html>
     <div class="row">
       <button id="btn" onclick="run()">Transcribe</button>
       <div id="download-row">
+        <button onclick="copyText()" id="copy-btn">Copy</button>
         <a id="download-link" download><button onclick="document.getElementById('download-link').click()">Download</button></a>
       </div>
     </div>
@@ -776,6 +777,14 @@ async function run() {
   btn.disabled = false;
 }
 document.getElementById('url').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+async function copyText() {
+  const text = document.getElementById('result').textContent;
+  if (!text) return;
+  await navigator.clipboard.writeText(text);
+  const btn = document.getElementById('copy-btn');
+  btn.textContent = 'Copied!';
+  setTimeout(() => btn.textContent = 'Copy', 1500);
+}
 </script>
 </body>
 </html>"""
