@@ -657,6 +657,7 @@ def summarize_text(text: str, cmd: str, prompt: str) -> bool:
     """Pipe text to an external command for summarization."""
     full_input = f"{prompt}\n\n{text}"
     cmd_parts = shlex.split(cmd)
+    cmd_parts = [os.path.expandvars(os.path.expanduser(p)) for p in cmd_parts]
     debug(f"$ echo '...' | {' '.join(cmd_parts)}")
 
     try:
