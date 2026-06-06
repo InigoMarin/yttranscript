@@ -654,7 +654,11 @@ def _extract_vtt_plain_text(vtt_path: Path) -> str:
 
 
 def summarize_text(text: str, cmd: str, prompt: str) -> bool:
-    """Send text to an external command for summarization via stdin."""
+    """Send text to an external command for summarization via stdin.
+
+    Output flows directly to the terminal (no capture) so the user sees
+    model loading and response in real-time.
+    """
     full_input = f"{prompt} {text}"
     cmd_parts = shlex.split(cmd)
     cmd_parts = [os.path.expandvars(os.path.expanduser(p)) for p in cmd_parts]
@@ -665,8 +669,6 @@ def summarize_text(text: str, cmd: str, prompt: str) -> bool:
         result = subprocess.run(
             cmd_parts,
             input=full_input,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
             text=True,
             check=False,
             timeout=300,
@@ -679,17 +681,9 @@ def summarize_text(text: str, cmd: str, prompt: str) -> bool:
         return False
 
     if result.returncode != 0:
-        error(f"Summarize command failed: {result.stderr.strip()[:500]}")
+        error("Summarize command failed.")
         return False
 
-    output = result.stdout.strip()
-    if not output:
-        error("Summarize command produced no output.")
-        if result.stderr.strip():
-            error(f"stderr: {result.stderr.strip()[:500]}")
-        return False
-
-    print(output)
     return True
 
 
