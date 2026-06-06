@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.20.0"
+__version__ = "1.21.0"
 
 import argparse
 import io
@@ -426,21 +426,6 @@ def transcribe_with_whisper(
 # VTT → Plain text conversion
 # ---------------------------------------------------------------------------
 
-def _parse_vtt_timestamp(time_str: str) -> str:
-    """Parse a VTT timestamp like '00:01:23.000' → '[01:23]' or '[01:01:23]'."""
-    parts = time_str.strip().split(":")
-    if len(parts) == 3:
-        h, m, s = parts
-    elif len(parts) == 2:
-        h, m, s = "0", parts[0], parts[1]
-    else:
-        return ""
-    total = int(h) * 3600 + int(m) * 60 + int(s.split(".")[0])
-    if total >= 3600:
-        return f"[{total // 3600:02d}:{total % 3600 // 60:02d}:{total % 60:02d}]"
-    return f"[{total // 60:02d}:{total % 60:02d}]"
-
-
 def _vtt_time_to_seconds(time_str: str) -> int:
     """Convert VTT timestamp '00:01:23.000' to total seconds."""
     parts = time_str.strip().split(":")
@@ -473,9 +458,12 @@ def _clean_vtt_text(text: str) -> str:
     return text.strip()
 
 
-def vtt_to_json(vtt_path: Path, video_info: dict, chunk_size: int = 30) -> str:
-    """Convert VTT to JSON with chunked text for RAG ingestion."""
-    cues: list[tuple[int, str]] = []
+def parse_vtt(vtt_path: Path):
+    """Parse a VTT file, yielding (start_seconds, [cleaned_lines]) per cue.
+
+    Handles WEBVTT headers, timestamp lines, cue identifiers, HTML tags,
+    and entity decoding. Each yield is one cue block (blank-line-separated).
+    """
     current_start: int | None = None
     cue_lines: list[str] = []
 
@@ -484,9 +472,10 @@ def vtt_to_json(vtt_path: Path, video_info: dict, chunk_size: int = 30) -> str:
             line = line.strip()
             if not line:
                 if current_start is not None and cue_lines:
-                    text = _clean_vtt_text(" ".join(cue_lines))
-                    if text:
-                        cues.append((current_start, text))
+                    cleaned = [_clean_vtt_text(l) for l in cue_lines]
+                    cleaned = [c for c in cleaned if c]
+                    if cleaned:
+                        yield (current_start, cleaned)
                     cue_lines = []
                     current_start = None
                 continue
@@ -502,9 +491,15 @@ def vtt_to_json(vtt_path: Path, video_info: dict, chunk_size: int = 30) -> str:
                 cue_lines.append(line)
 
     if current_start is not None and cue_lines:
-        text = _clean_vtt_text(" ".join(cue_lines))
-        if text:
-            cues.append((current_start, text))
+        cleaned = [_clean_vtt_text(l) for l in cue_lines]
+        cleaned = [c for c in cleaned if c]
+        if cleaned:
+            yield (current_start, cleaned)
+
+
+def vtt_to_json(vtt_path: Path, video_info: dict, chunk_size: int = 30) -> str:
+    """Convert VTT to JSON with chunked text for RAG ingestion."""
+    cues = [(start, " ".join(lines)) for start, lines in parse_vtt(vtt_path)]
 
     deduped: list[tuple[int, str]] = []
     last_text = ""
@@ -567,99 +562,35 @@ def format_video_header(video_info: dict) -> str:
     )
 
 
-def vtt_to_text(vtt_path: Path, output_path: Path, video_info: dict | None = None, timestamps: bool = False) -> None:
-    """Convert VTT to plain text, deduplicating overlapping lines."""
+def _vtt_to_plain(vtt_path: Path, video_info: dict | None = None, timestamps: bool = False) -> str:
+    """Convert VTT to plain text string, deduplicating lines."""
     seen: set[str] = set()
     lines: list[str] = []
-    current_ts = ""
 
-    with open(vtt_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            if line.startswith("WEBVTT"):
-                continue
-            if line.startswith("Kind:"):
-                continue
-            if line.startswith("Language:"):
-                continue
-            if "-->" in line:
+    for start, cue_lines in parse_vtt(vtt_path):
+        for text in cue_lines:
+            if text not in seen:
+                seen.add(text)
                 if timestamps:
-                    current_ts = _parse_vtt_timestamp(line.split("-->")[0])
-                continue
-            if line.isdigit():
-                continue
-
-            # Remove HTML tags
-            clean = re.sub(r"<[^>]*>", "", line)
-            # Decode HTML entities
-            clean = (
-                clean.replace("&amp;", "&")
-                .replace("&gt;", ">")
-                .replace("&lt;", "<")
-                .replace("&#39;", "'")
-                .replace("&quot;", '"')
-            )
-            clean = clean.strip()
-            if clean and clean not in seen:
-                seen.add(clean)
-                if timestamps and current_ts:
-                    lines.append(f"{current_ts} {clean}")
+                    lines.append(f"[{_seconds_to_ts(start)}] {text}")
                 else:
-                    lines.append(clean)
+                    lines.append(text)
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        if video_info:
-            f.write(format_video_header(video_info))
-        f.write("\n".join(lines))
-        f.write("\n")
+    result = ""
+    if video_info:
+        result = format_video_header(video_info)
+    result += "\n".join(lines) + "\n"
+    return result
+
+
+def vtt_to_text(vtt_path: Path, output_path: Path, video_info: dict | None = None, timestamps: bool = False) -> None:
+    """Convert VTT to plain text file, deduplicating lines."""
+    output_path.write_text(_vtt_to_plain(vtt_path, video_info, timestamps), encoding="utf-8")
 
 
 def vtt_to_stdout(vtt_path: Path, video_info: dict | None = None, timestamps: bool = False) -> None:
     """Convert VTT to plain text and print to stdout."""
-    seen: set[str] = set()
-    lines: list[str] = []
-    current_ts = ""
-
-    with open(vtt_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            if line.startswith("WEBVTT"):
-                continue
-            if line.startswith("Kind:"):
-                continue
-            if line.startswith("Language:"):
-                continue
-            if "-->" in line:
-                if timestamps:
-                    current_ts = _parse_vtt_timestamp(line.split("-->")[0])
-                continue
-            if line.isdigit():
-                continue
-
-            clean = re.sub(r"<[^>]*>", "", line)
-            clean = (
-                clean.replace("&amp;", "&")
-                .replace("&gt;", ">")
-                .replace("&lt;", "<")
-                .replace("&#39;", "'")
-                .replace("&quot;", '"')
-            )
-            clean = clean.strip()
-            if clean and clean not in seen:
-                seen.add(clean)
-                if timestamps and current_ts:
-                    lines.append(f"{current_ts} {clean}")
-                else:
-                    lines.append(clean)
-
-    if video_info:
-        sys.stdout.write(format_video_header(video_info))
-    sys.stdout.write("\n".join(lines))
-    sys.stdout.write("\n")
+    sys.stdout.write(_vtt_to_plain(vtt_path, video_info, timestamps))
 
 
 # ---------------------------------------------------------------------------
@@ -670,21 +601,11 @@ def _extract_vtt_plain_text(vtt_path: Path) -> str:
     """Extract clean plain text from VTT (for piping to summarizer)."""
     seen: set[str] = set()
     lines: list[str] = []
-
-    with open(vtt_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("WEBVTT"):
-                continue
-            if line.startswith("Kind:") or line.startswith("Language:"):
-                continue
-            if "-->" in line or line.isdigit():
-                continue
-            clean = _clean_vtt_text(line)
-            if clean and clean not in seen:
-                seen.add(clean)
-                lines.append(clean)
-
+    for _, cue_lines in parse_vtt(vtt_path):
+        for text in cue_lines:
+            if text and text not in seen:
+                seen.add(text)
+                lines.append(text)
     return " ".join(lines)
 
 
@@ -1073,6 +994,64 @@ def cleanup_temp_files(video_title: str | None = None, keep_audio: bool = False)
         for f in Path(".").glob(f"audio_{video_title}.*"):
             f.unlink(missing_ok=True)
 
+def _render_output(
+    vtt_path: Path,
+    video_info: dict,
+    fmt: str,
+    stdout_mode: bool,
+    timestamps: bool,
+    chunk_size: int,
+    summarize: bool,
+    summarize_cmd: str | None,
+    summarize_prompt: str | None,
+    summarize_timeout: int,
+    keep_vtt: bool,
+) -> None:
+    """Render VTT to final output: summarize, stdout, or file."""
+    if summarize:
+        if not summarize_cmd:
+            error("--summarize requires summarize_cmd in config or --summarize-cmd flag.")
+            sys.exit(1)
+        info("Extracting text for summarization...")
+        text = _extract_vtt_plain_text(vtt_path)
+        vtt_path.unlink(missing_ok=True)
+        print(format_video_header(video_info), end="")
+        success(f"Piping transcript to: {summarize_cmd}")
+        if not summarize_text(text, summarize_cmd, summarize_prompt or "", summarize_timeout):
+            sys.exit(1)
+        return
+
+    if stdout_mode:
+        if fmt == "vtt":
+            sys.stdout.write(vtt_path.read_text(encoding="utf-8"))
+        elif fmt == "json":
+            sys.stdout.write(vtt_to_json(vtt_path, video_info, chunk_size=chunk_size))
+        else:
+            vtt_to_stdout(vtt_path, video_info, timestamps=timestamps)
+        vtt_path.unlink(missing_ok=True)
+        return
+
+    if fmt == "vtt":
+        success(f"Saved: {vtt_path}")
+        return
+
+    if fmt == "json":
+        info("Converting to JSON (chunked for RAG)...")
+        out = vtt_path.with_suffix(".json")
+        out.write_text(vtt_to_json(vtt_path, video_info, chunk_size=chunk_size), encoding="utf-8")
+        success(f"Saved: {out}")
+    else:
+        info("Converting to plain text (deduplicating lines)...")
+        out = vtt_path.with_suffix(".txt")
+        vtt_to_text(vtt_path, out, video_info, timestamps=timestamps)
+        success(f"Saved: {out}")
+
+    if keep_vtt:
+        info(f"VTT kept at: {vtt_path}")
+    else:
+        vtt_path.unlink(missing_ok=True)
+
+
 def process_video(
     url: str,
     output: str | None = None,
@@ -1141,7 +1120,7 @@ def process_video(
                 info("Available subtitles:")
                 run(["yt-dlp", "--list-subs", url], check=False)
 
-            # Strategy: try manual (lang variants → en fallback) → auto (same) → whisper
+            # Strategy: try manual (lang variants → fallback) → auto (same) → whisper
             lang_variants = get_lang_variants(lang)
             if lang.split("-")[0] != fallback_lang:
                 lang_variants.extend(get_lang_variants(fallback_lang))
@@ -1163,83 +1142,16 @@ def process_video(
                         break
 
             if downloaded:
-                # Find the VTT file
                 vtt_files = list(Path(".").glob(f"{temp_prefix}*.vtt"))
                 if vtt_files:
-                    vtt_file = vtt_files[0]
-
-                    if summarize:
-                        if not summarize_cmd:
-                            error("--summarize requires summarize_cmd in config or --summarize-cmd flag.")
-                            sys.exit(1)
-                        info("Extracting text for summarization...")
-                        text = _extract_vtt_plain_text(vtt_file)
-                        vtt_file.unlink(missing_ok=True)
-                        print(format_video_header({
-                            "title": video_title,
-                            "url": url,
-                            "duration": video_duration,
-                            "whisper": False,
-                        }), end="")
-                        success(f"Piping transcript to: {summarize_cmd}")
-                        if not summarize_text(text, summarize_cmd, summarize_prompt or "", summarize_timeout):
-                            sys.exit(1)
-                        return
-
-                    if stdout_mode:
-                        if fmt == "vtt":
-                            sys.stdout.write(vtt_file.read_text(encoding="utf-8"))
-                        elif fmt == "json":
-                            sys.stdout.write(vtt_to_json(vtt_file, {
-                                "title": video_title,
-                                "url": url,
-                                "duration": video_duration,
-                                "whisper": False,
-                            }, chunk_size=chunk_size))
-                        else:
-                            vtt_to_stdout(vtt_file, {
-                                "title": video_title,
-                                "url": url,
-                                "duration": video_duration,
-                                "whisper": False,
-                            }, timestamps=timestamps)
-                        vtt_file.unlink(missing_ok=True)
-                        return
-
                     final_vtt = Path(f"{video_title}.vtt")
-                    vtt_file.rename(final_vtt)
-
-                    if fmt == "vtt":
-                        success(f"Saved: {final_vtt}")
-                    elif fmt == "json":
-                        info("Converting to JSON (chunked for RAG)...")
-                        json_output = Path(f"{video_title}.json")
-                        json_output.write_text(vtt_to_json(final_vtt, {
-                            "title": video_title,
-                            "url": url,
-                            "duration": video_duration,
-                            "whisper": False,
-                        }, chunk_size=chunk_size), encoding="utf-8")
-                        success(f"Saved: {json_output}")
-                        if not keep_vtt:
-                            final_vtt.unlink(missing_ok=True)
-                    else:
-                        # Convert to plain text
-                        info("Converting to plain text (deduplicating lines)...")
-                        txt_output = Path(f"{video_title}.txt")
-                        vtt_to_text(final_vtt, txt_output, {
-                            "title": video_title,
-                            "url": url,
-                            "duration": video_duration,
-                            "whisper": False,
-                        }, timestamps=timestamps)
-                        success(f"Saved: {txt_output}")
-
-                        if keep_vtt:
-                            info(f"VTT kept at: {final_vtt}")
-                        else:
-                            final_vtt.unlink(missing_ok=True)
-
+                    vtt_files[0].rename(final_vtt)
+                    _render_output(
+                        final_vtt,
+                        {"title": video_title, "url": url, "duration": video_duration, "whisper": False},
+                        fmt, stdout_mode, timestamps, chunk_size,
+                        summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
+                    )
                     return
 
             warn("No subtitles available.")
@@ -1258,69 +1170,12 @@ def process_video(
         # Post-process Whisper output
         vtt_file = Path(f"{video_title}.vtt")
         if vtt_file.exists():
-            if summarize:
-                if not summarize_cmd:
-                    error("--summarize requires summarize_cmd in config or --summarize-cmd flag.")
-                    sys.exit(1)
-                info("Extracting text for summarization...")
-                text = _extract_vtt_plain_text(vtt_file)
-                vtt_file.unlink(missing_ok=True)
-                print(format_video_header({
-                    "title": video_title,
-                    "url": url,
-                    "duration": video_duration,
-                    "whisper": True,
-                }), end="")
-                success(f"Piping transcript to: {summarize_cmd}")
-                if not summarize_text(text, summarize_cmd, summarize_prompt or ""):
-                    sys.exit(1)
-                return
-
-            if stdout_mode:
-                if fmt == "vtt":
-                    sys.stdout.write(vtt_file.read_text(encoding="utf-8"))
-                elif fmt == "json":
-                    sys.stdout.write(vtt_to_json(vtt_file, {
-                        "title": video_title,
-                        "url": url,
-                        "duration": video_duration,
-                        "whisper": True,
-                    }, chunk_size=chunk_size))
-                else:
-                    vtt_to_stdout(vtt_file, {
-                        "title": video_title,
-                        "url": url,
-                        "duration": video_duration,
-                        "whisper": True,
-                    }, timestamps=timestamps)
-                vtt_file.unlink(missing_ok=True)
-            elif fmt == "vtt":
-                success(f"Saved: {vtt_file}")
-            elif fmt == "json":
-                info("Converting to JSON (chunked for RAG)...")
-                json_output = Path(f"{video_title}.json")
-                json_output.write_text(vtt_to_json(vtt_file, {
-                    "title": video_title,
-                    "url": url,
-                    "duration": video_duration,
-                    "whisper": True,
-                }, chunk_size=chunk_size), encoding="utf-8")
-                success(f"Saved: {json_output}")
-                if not keep_vtt:
-                    vtt_file.unlink(missing_ok=True)
-            else:
-                info("Converting to plain text...")
-                txt_output = Path(f"{video_title}.txt")
-                vtt_to_text(vtt_file, txt_output, {
-                    "title": video_title,
-                    "url": url,
-                    "duration": video_duration,
-                    "whisper": True,
-                }, timestamps=timestamps)
-                success(f"Saved: {txt_output}")
-
-                if not keep_vtt:
-                    vtt_file.unlink(missing_ok=True)
+            _render_output(
+                vtt_file,
+                {"title": video_title, "url": url, "duration": video_duration, "whisper": True},
+                fmt, stdout_mode, timestamps, chunk_size,
+                summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
+            )
     finally:
         cleanup_temp_files(video_title, keep_audio)
 
