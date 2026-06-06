@@ -656,10 +656,11 @@ def _extract_vtt_plain_text(vtt_path: Path) -> str:
 def summarize_text(text: str, cmd: str, prompt: str) -> bool:
     """Send text to an external command for summarization.
 
-    Wraps transcript in <data> tags and instructs the model to respond
-    between <summary> tags. Captures stdout and extracts only the summary.
+    Sends prompt + transcript via stdin. Captures stdout, extracts only
+    the model's response (between prompt echo and stats line), and cleans
+    thinking blocks.
     """
-    full_input = f"{prompt} Responde entre <summary> y </summary>. <data>{text}</data>"
+    full_input = f"{prompt} {text}"
     cmd_parts = shlex.split(cmd)
     cmd_parts = [os.path.expandvars(os.path.expanduser(p)) for p in cmd_parts]
 
@@ -692,20 +693,40 @@ def summarize_text(text: str, cmd: str, prompt: str) -> bool:
         error("Summarize command produced no output.")
         return False
 
-    # Extract <summary>...</summary> if present
-    summary_match = re.search(r"<summary>(.*?)</summary>", output, re.DOTALL)
-    if summary_match:
-        print(summary_match.group(1).strip())
+    # llama-cli stdout structure:
+    #   [banner, loading, commands...]
+    #   > <full prompt>         ← prompt echo (can be very long)
+    #   [model response]        ← what we want
+    #   [ Prompt: ... ]         ← stats
+    #   Exiting...
+    lines = output.split("\n")
+    response_lines = []
+    in_response = False
+    for line in lines:
+        if not in_response:
+            if line.startswith("> "):
+                in_response = True
+            continue
+        if line.startswith("[ Prompt:") or line.startswith("Exiting"):
+            break
+        response_lines.append(line)
+
+    clean = "\n".join(response_lines).strip()
+    # Strip backspace chars and spinner residue (|, /, -, \) at line starts
+    clean = clean.replace("\x08", "")
+    clean = re.sub(r"^[|/\\-]+\s*", "", clean, flags=re.MULTILINE)
+    # Remove [Start thinking]...[End thinking] blocks (closed)
+    clean = re.sub(r"\[Start thinking\].*?\[End thinking\]", "", clean, flags=re.DOTALL)
+    # Remove unclosed [Start thinking]... (truncated output)
+    clean = re.sub(r"\[Start thinking\].*$", "", clean, flags=re.DOTALL)
+    clean = clean.strip()
+
+    if clean:
+        print(clean)
     else:
-        # Fallback: strip [Start thinking]...[End thinking] blocks
-        clean = re.sub(r"\[Start thinking\].*?\[End thinking\]", "", output, flags=re.DOTALL)
-        # Remove prompt echo line (> ...)
-        clean = re.sub(r"^> .*$", "", clean, flags=re.MULTILINE)
-        clean = clean.strip()
-        if clean:
-            print(clean)
-        else:
-            print(output)
+        print(output)
+
+    return True
 
     return True
 
