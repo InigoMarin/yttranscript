@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.19.0"
+__version__ = "1.20.0"
 
 import argparse
 import io
@@ -38,10 +38,22 @@ DEFAULTS = {
     "chunk_size": 30,
     "summarize_cmd": None,
     "summarize_prompt": "Summarize this video transcript in bullet points",
+    "summarize_timeout": 300,
+    "fallback_lang": "en",
     "whisper_model": "base",
     "whisper_device": "gpu",
     "whisper_dir": None,
+    "port": 8080,
     "output": None,
+}
+
+_CONFIG_HIDDEN = {"output", "port"}
+
+_CONFIG_EXAMPLES = {
+    "lang": "es",
+    "summarize_cmd": "llama-cli -m ~/.local/share/models/model.gguf --single-turn --temp 0.7 -n 1024",
+    "summarize_prompt": "Resume el video",
+    "whisper_dir": "/home/user/.cache/whisper",
 }
 
 
@@ -109,21 +121,32 @@ def confirm(prompt: str, default: bool = False) -> bool:
     return answer in ("y", "yes")
 
 
-DEFAULT_CONFIG = """\
-# yttranscript configuration
-# Uncomment and edit the lines below to set your defaults.
-# CLI flags always override these values.
+def _toml_value(val):
+    """Format a Python value as a TOML literal for the config template."""
+    if isinstance(val, bool):
+        return "true" if val else "false"
+    if isinstance(val, (int, float)):
+        return str(val)
+    return f'"{val}"'
 
-# lang = "es"
-# format = "txt"
-# timestamps = true
-# chunk_size = 30
-# summarize_cmd = "llama-cli -m ~/.local/share/models/model.gguf --single-turn --temp 0.7 -n 1024"
-# summarize_prompt = "Resume el video"
-# whisper_model = "base"
-# whisper_device = "gpu"
-# whisper_dir = "/home/user/.cache/whisper"
-"""
+
+def _generate_config_template() -> str:
+    """Generate config template from DEFAULTS (single source of truth)."""
+    lines = [
+        "# yttranscript configuration",
+        "# Uncomment and edit the lines below to set your defaults.",
+        "# CLI flags always override these values.",
+        "",
+    ]
+    for key, default in DEFAULTS.items():
+        if key in _CONFIG_HIDDEN:
+            continue
+        example = _CONFIG_EXAMPLES.get(key, default)
+        lines.append(f"# {key} = {_toml_value(example)}")
+    return "\n".join(lines) + "\n"
+
+
+DEFAULT_CONFIG = _generate_config_template()
 
 
 def ensure_config_dir() -> None:
@@ -309,6 +332,9 @@ def transcribe_with_whisper(
     quiet: bool = False,
 ) -> bool:
     """Download audio and transcribe with Whisper. Returns True on success."""
+    if not shutil.which("ffmpeg"):
+        error("ffmpeg not found. Install it (e.g. sudo pacman -S ffmpeg).")
+        return False
     info_url = get_video_info(url)
     size_mb = info_url["size"] // (1024 * 1024) if info_url["size"] else 0
     duration_min = info_url["duration"] // 60
@@ -662,7 +688,7 @@ def _extract_vtt_plain_text(vtt_path: Path) -> str:
     return " ".join(lines)
 
 
-def summarize_text(text: str, cmd: str, prompt: str) -> bool:
+def summarize_text(text: str, cmd: str, prompt: str, timeout: int = 300) -> bool:
     """Send text to an external command for summarization.
 
     Uses `script` to capture all terminal output (including /dev/tty writes)
@@ -696,7 +722,7 @@ def summarize_text(text: str, cmd: str, prompt: str) -> bool:
             stderr=subprocess.DEVNULL,
             text=True,
             check=False,
-            timeout=300,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
         os.unlink(tmp_path)
@@ -977,6 +1003,8 @@ class TranscriptHandler(BaseHTTPRequestHandler):
         buf = io.StringIO()
         original_stdout = sys.stdout
 
+        config = load_config()
+
         try:
             sys.stdout = buf
             process_video(
@@ -985,8 +1013,10 @@ class TranscriptHandler(BaseHTTPRequestHandler):
                 lang=lang,
                 timestamps=timestamps,
                 summarize=summarize,
-                summarize_cmd=resolve_value(None, load_config(), "summarize_cmd"),
-                summarize_prompt=resolve_value(None, load_config(), "summarize_prompt"),
+                summarize_cmd=resolve_value(None, config, "summarize_cmd"),
+                summarize_prompt=resolve_value(None, config, "summarize_prompt"),
+                summarize_timeout=resolve_value(None, config, "summarize_timeout"),
+                fallback_lang=resolve_value(None, config, "fallback_lang"),
                 stdout_mode=True,
             )
             text = buf.getvalue()
@@ -1061,6 +1091,8 @@ def process_video(
     summarize: bool = False,
     summarize_cmd: str | None = None,
     summarize_prompt: str | None = None,
+    summarize_timeout: int = 300,
+    fallback_lang: str = "en",
 ) -> None:
     """Main processing pipeline."""
     ensure_yt_dlp()
@@ -1086,8 +1118,8 @@ def process_video(
         if lang:
             success(f"Detected language: {lang}")
         else:
-            lang = "en"
-            warn("Could not detect language, falling back to English (en).")
+            lang = fallback_lang
+            warn(f"Could not detect language, falling back to {fallback_lang}.")
 
     # Determine output name
     if output:
@@ -1111,8 +1143,8 @@ def process_video(
 
             # Strategy: try manual (lang variants → en fallback) → auto (same) → whisper
             lang_variants = get_lang_variants(lang)
-            if lang.split("-")[0] != "en":
-                lang_variants.extend(get_lang_variants("en"))
+            if lang.split("-")[0] != fallback_lang:
+                lang_variants.extend(get_lang_variants(fallback_lang))
             downloaded = False
 
             for variant in lang_variants:
@@ -1150,7 +1182,7 @@ def process_video(
                             "whisper": False,
                         }), end="")
                         success(f"Piping transcript to: {summarize_cmd}")
-                        if not summarize_text(text, summarize_cmd, summarize_prompt or ""):
+                        if not summarize_text(text, summarize_cmd, summarize_prompt or "", summarize_timeout):
                             sys.exit(1)
                         return
 
@@ -1438,13 +1470,14 @@ def show_config() -> None:
     config = load_config()
     print(f"\n  {Colors.BOLD}Config file:{Colors.RESET} {CONFIG_PATH}\n")
 
-    keys = ["lang", "format", "timestamps", "chunk_size", "summarize_cmd", "summarize_prompt", "whisper_model", "whisper_device", "whisper_dir"]
-    for key in keys:
+    for key in DEFAULTS:
+        if key in _CONFIG_HIDDEN:
+            continue
         raw = config.get(key)
         resolved = resolve_value(None, config, key)
         source = "config" if raw is not None else "default"
         display = resolved if resolved is not None else "auto-detect"
-        print(f"  {key + ':':16} {str(display):12} ({source})")
+        print(f"  {key + ':':20} {str(display):12} ({source})")
 
     print()
     sys.exit(0)
@@ -1479,6 +1512,8 @@ def main() -> None:
     chunk_size = resolve_value(args.chunk_size, config, "chunk_size")
     summarize_cmd = resolve_value(args.summarize_cmd, config, "summarize_cmd")
     summarize_prompt = resolve_value(args.summarize_prompt, config, "summarize_prompt")
+    summarize_timeout = resolve_value(None, config, "summarize_timeout")
+    fallback_lang = resolve_value(None, config, "fallback_lang")
     whisper_model = resolve_value(args.whisper_model, config, "whisper_model")
     whisper_dir = resolve_value(args.whisper_dir, config, "whisper_dir")
     whisper_device = resolve_value(args.whisper_device, config, "whisper_device")
@@ -1502,6 +1537,8 @@ def main() -> None:
             summarize=args.summarize,
             summarize_cmd=summarize_cmd,
             summarize_prompt=summarize_prompt,
+            summarize_timeout=summarize_timeout,
+            fallback_lang=fallback_lang,
         )
     except KeyboardInterrupt:
         print()
