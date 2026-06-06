@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.17.0"
+__version__ = "1.17.1"
 
 import argparse
 import io
@@ -880,13 +880,20 @@ async function run() {
   params.set('format', fmt);
   if (document.getElementById('timestamps').checked) params.set('timestamps', '1');
   if (summarize) params.set('summarize', '1');
+  function setStatus(text, cls) {
+    status.textContent = '';
+    const span = document.createElement('span');
+    if (cls) span.className = cls;
+    span.textContent = text;
+    status.appendChild(span);
+  }
   try {
     const res = await fetch('/api?' + params);
     const data = await res.json();
     if (data.error) {
-      status.innerHTML = '<span class="error">' + data.error + '</span>';
+      setStatus(data.error, 'error');
     } else {
-      status.innerHTML = '<span class="ok">' + data.title + '</span>';
+      setStatus(data.title, 'ok');
       outputCard.style.display = 'block';
       if ((fmt === 'txt' || summarize) && fmt !== 'json' && fmt !== 'vtt') {
         result.className = 'md';
@@ -901,7 +908,7 @@ async function run() {
       }
     }
   } catch (e) {
-    status.innerHTML = '<span class="error">Request failed: ' + e.message + '</span>';
+    setStatus('Request failed: ' + e.message, 'error');
   }
   btn.disabled = false;
 }
@@ -940,15 +947,15 @@ class TranscriptHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def _serve_download(self, filename):
-        cache_dir = Path.home() / ".cache" / "yttranscript"
-        filepath = cache_dir / urllib.parse.unquote(filename)
-        if not filepath.exists():
+        cache_dir = (Path.home() / ".cache" / "yttranscript").resolve()
+        filepath = (cache_dir / urllib.parse.unquote(filename)).resolve()
+        if not filepath.is_relative_to(cache_dir) or not filepath.exists():
             self.send_error(404)
             return
         content_type = "application/json" if filename.endswith(".json") else "text/plain"
         self.send_response(200)
         self.send_header("Content-Type", f"{content_type}; charset=utf-8")
-        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Disposition", f'attachment; filename="{filepath.name}"')
         self.end_headers()
         self.wfile.write(filepath.read_bytes())
 
