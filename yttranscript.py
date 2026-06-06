@@ -655,7 +655,7 @@ def _extract_vtt_plain_text(vtt_path: Path) -> str:
 
 def summarize_text(text: str, cmd: str, prompt: str) -> bool:
     """Send text to an external command for summarization via stdin."""
-    full_input = f"{prompt}\n\n{text}"
+    full_input = f"{prompt} {text}"
     cmd_parts = shlex.split(cmd)
     cmd_parts = [os.path.expandvars(os.path.expanduser(p)) for p in cmd_parts]
 
