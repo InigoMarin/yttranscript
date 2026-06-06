@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.17.1"
+__version__ = "1.18.0"
 
 import argparse
 import io
@@ -17,7 +17,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import threading
 import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -230,6 +229,13 @@ def ensure_whisper() -> bool:
 # yt-dlp wrappers
 # ---------------------------------------------------------------------------
 
+def _sanitize_filename(title: str) -> str:
+    """Replace characters problematic in filenames."""
+    for ch in '/:?\"<>|*':
+        title = title.replace(ch, "-")
+    return title or "transcript"
+
+
 def get_video_title(url: str) -> str:
     """Get video title and sanitize for filesystem."""
     result = run(
@@ -238,10 +244,7 @@ def get_video_title(url: str) -> str:
         check=False,
     )
     title = result.stdout.strip() if result.returncode == 0 else "transcript"
-    # Sanitize: replace problematic characters
-    for ch in "/:?\"<>|*":
-        title = title.replace(ch, "-")
-    return title or "transcript"
+    return _sanitize_filename(title)
 
 
 def list_subs(url: str) -> None:
@@ -760,8 +763,6 @@ def summarize_text(text: str, cmd: str, prompt: str) -> bool:
 
     return True
 
-    return True
-
 
 # ---------------------------------------------------------------------------
 # Web server
@@ -952,7 +953,12 @@ class TranscriptHandler(BaseHTTPRequestHandler):
         if not filepath.is_relative_to(cache_dir) or not filepath.exists():
             self.send_error(404)
             return
-        content_type = "application/json" if filename.endswith(".json") else "text/plain"
+        if filepath.suffix == ".json":
+            content_type = "application/json"
+        elif filepath.suffix == ".vtt":
+            content_type = "text/vtt"
+        else:
+            content_type = "text/plain"
         self.send_response(200)
         self.send_header("Content-Type", f"{content_type}; charset=utf-8")
         self.send_header("Content-Disposition", f'attachment; filename="{filepath.name}"')
@@ -1008,18 +1014,13 @@ class TranscriptHandler(BaseHTTPRequestHandler):
             pass
 
         download = None
-        if fmt == "json":
-            safe_title = re.sub(r'[/?:"<>|*]', "-", title)
-            download_path = Path.home() / ".cache" / "yttranscript" / f"{safe_title}.json"
+        ext = {"json": ".json", "txt": ".txt", "vtt": ".vtt"}.get(fmt)
+        if ext:
+            safe_title = _sanitize_filename(title)
+            download_path = Path.home() / ".cache" / "yttranscript" / f"{safe_title}{ext}"
             download_path.parent.mkdir(parents=True, exist_ok=True)
             download_path.write_text(text, encoding="utf-8")
-            download = f"/download/{urllib.parse.quote(safe_title)}.json"
-        elif fmt == "txt":
-            safe_title = re.sub(r'[/?:"<>|*]', "-", title)
-            download_path = Path.home() / ".cache" / "yttranscript" / f"{safe_title}.txt"
-            download_path.parent.mkdir(parents=True, exist_ok=True)
-            download_path.write_text(text, encoding="utf-8")
-            download = f"/download/{urllib.parse.quote(safe_title)}.txt"
+            download = f"/download/{urllib.parse.quote(safe_title)}{ext}"
 
         self._json_response({"title": title, "text": text, "download": download})
 

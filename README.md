@@ -18,21 +18,6 @@ make pkg
 sudo pacman -U yttranscript-*.pkg.tar.zst
 ```
 
-Or step by step:
-
-```bash
-# 1. Create source tarball
-mkdir -p yttranscript-1.8.1
-cp yttranscript.py pyproject.toml README.md LICENSE yttranscript-1.8.1/
-tar czf yttranscript-1.8.1.tar.gz yttranscript-1.8.1/
-
-# 2. Build and install
-makepkg -si
-
-# 3. Clean up
-rm -rf yttranscript-1.8.1 yttranscript-1.8.1.tar.gz
-```
-
 This installs the `yttranscript` command system-wide. Uninstall with `pacman -R yttranscript`.
 
 ## Usage
@@ -135,14 +120,14 @@ On first run, `yttranscript` creates a config file at `~/.config/yttranscript/co
 # Uncomment and edit to set your defaults
 # CLI flags always override these values
 
-lang = "es"
-format = "txt"
-timestamps = true
-chunk_size = 30
-# summarize_cmd = "llama-cli -m ~/.local/share/models/model.gguf --temp 0.7 -n 1024"
-# summarize_prompt = "Summarize this video in bullet points"
-whisper_model = "medium"
-whisper_device = "gpu"
+# lang = "es"
+# format = "txt"
+# timestamps = true
+# chunk_size = 30
+# summarize_cmd = "llama-cli -m ~/.local/share/models/model.gguf --single-turn --temp 0.7 -n 1024"
+# summarize_prompt = "Resume el video"
+# whisper_model = "medium"
+# whisper_device = "gpu"
 # whisper_dir = "/home/user/.cache/whisper"
 ```
 
@@ -166,6 +151,7 @@ yttranscript --serve
 Features:
 - Paste YouTube URL and transcribe from the browser
 - Select language, format (txt/json/vtt), timestamps, summarize
+- Markdown rendering for txt and summarize output (headers, bold, lists)
 - Download results directly from the browser
 - Runs on localhost only (no external access)
 
@@ -181,7 +167,7 @@ Features:
 2. Try manual subtitles: exact lang → wildcard (e.g. `es.*`) → English fallback
 3. Fall back to auto-generated subtitles (same language chain)
 4. Last resort: download audio + transcribe with Whisper (GPU with CPU fallback)
-5. Convert VTT to clean plain text (deduplicated lines, with video info header)
+5. Convert VTT to clean text with Markdown header (title, URL, duration, source)
 
 ## Examples
 
@@ -209,8 +195,8 @@ yttranscript URL --stdout | wl-copy
 
 ```bash
 # Configure once in ~/.config/yttranscript/config.toml:
-#   summarize_cmd = "llama-cli -m model.gguf --temp 0.7 -n 1024"
-#   summarize_prompt = "Resume este video en puntos clave"
+#   summarize_cmd = "llama-cli -m model.gguf --single-turn --temp 0.7 -n 1024"
+#   summarize_prompt = "Resume el video"
 
 # Then just:
 yttranscript URL --summarize
@@ -221,7 +207,7 @@ yttranscript URL --summarize \
   --summarize-prompt "Resume en 5 bullets"
 ```
 
-How it works: yttranscript downloads the transcript, extracts plain text, and pipes it as stdin to `summarize_cmd` with `summarize_prompt` prepended. Works with any CLI tool: llama.cpp, ollama, aichat, etc.
+How it works: yttranscript downloads the transcript, extracts plain text, and sends it to `summarize_cmd` with `summarize_prompt` prepended. The output is captured and cleaned (banner, stats, thinking blocks removed). Currently optimized for llama.cpp's `llama-cli`; other tools may work but output parsing is tailored to llama-cli's format.
 
 ```bash
 yttranscript URL --format json --stdout
