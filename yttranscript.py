@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.13.2"
+__version__ = "1.13.3"
 
 import argparse
 import io
@@ -118,7 +118,7 @@ DEFAULT_CONFIG = """\
 # format = "txt"
 # timestamps = true
 # chunk_size = 30
-# summarize_cmd = "llama-cli -m ~/.local/share/models/model.gguf --temp 0.7 -n 1024"
+# summarize_cmd = "llama-cli -m ~/.local/share/models/model.gguf --single-turn --temp 0.7 -n 1024"
 # summarize_prompt = "Summarize this video in bullet points"
 # whisper_model = "base"
 # whisper_device = "gpu"
@@ -654,33 +654,22 @@ def _extract_vtt_plain_text(vtt_path: Path) -> str:
 
 
 def summarize_text(text: str, cmd: str, prompt: str) -> bool:
-    """Send text to an external command for summarization.
-
-    Uses -p flag to pass the prompt directly (more reliable than stdin,
-    which can hang in llama-cli conversation mode). Falls back to stdin
-    if the user's command already includes -p or --prompt.
-    """
+    """Send text to an external command for summarization via stdin."""
     full_input = f"{prompt}\n\n{text}"
     cmd_parts = shlex.split(cmd)
     cmd_parts = [os.path.expandvars(os.path.expanduser(p)) for p in cmd_parts]
 
-    has_prompt_flag = any(p in ("-p", "--prompt") for p in cmd_parts)
-    if has_prompt_flag:
-        debug(f"$ echo '...' | {' '.join(cmd_parts)}")
-        run_kwargs: dict = {"input": full_input}
-    else:
-        cmd_parts.extend(["-p", full_input])
-        debug(f"$ {' '.join(cmd_parts[:4])}... -p '...'")
-        run_kwargs = {}
+    debug(f"$ echo '...' | {' '.join(cmd_parts[:4])}...")
 
     try:
         result = subprocess.run(
             cmd_parts,
-            capture_output=True,
+            input=full_input,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             check=False,
             timeout=300,
-            **run_kwargs,
         )
     except subprocess.TimeoutExpired:
         error("Summarize command timed out after 5 minutes.")
@@ -690,10 +679,17 @@ def summarize_text(text: str, cmd: str, prompt: str) -> bool:
         return False
 
     if result.returncode != 0:
-        error(f"Summarize command failed: {result.stderr.strip()}")
+        error(f"Summarize command failed: {result.stderr.strip()[:500]}")
         return False
 
-    print(result.stdout, end="")
+    output = result.stdout.strip()
+    if not output:
+        error("Summarize command produced no output.")
+        if result.stderr.strip():
+            error(f"stderr: {result.stderr.strip()[:500]}")
+        return False
+
+    print(output)
     return True
 
 

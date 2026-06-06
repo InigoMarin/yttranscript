@@ -1,6 +1,6 @@
 # Maintainer: ima <ima@ima.com>
 pkgname=yttranscript
-pkgver=1.13.2
+pkgver=1.13.3
 pkgrel=1
 pkgdesc="Download YouTube video transcripts with Whisper fallback"
 arch=('any')
