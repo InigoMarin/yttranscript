@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.16.0"
+__version__ = "1.17.0"
 
 import argparse
 import io
@@ -516,7 +516,7 @@ def vtt_to_json(vtt_path: Path, video_info: dict, chunk_size: int = 30) -> str:
 
 
 def format_video_header(video_info: dict) -> str:
-    """Format video metadata as a text header with separator line."""
+    """Format video metadata as a Markdown header with separator line."""
     duration = video_info.get("duration", 0)
     if duration:
         hours = duration // 3600
@@ -527,11 +527,14 @@ def format_video_header(video_info: dict) -> str:
     else:
         duration_str = "unknown"
     return (
-        f"Title: {video_info.get('title', 'unknown')}\n"
-        f"URL: {video_info.get('url', 'unknown')}\n"
-        f"Duration: {duration_str}\n"
-        f"Transcribed: {'Whisper' if video_info.get('whisper') else 'YouTube subtitles'}\n"
-        f"\n{'─' * 60}\n\n"
+        f"# {video_info.get('title', 'unknown')}\n"
+        f"\n"
+        f"**URL:** {video_info.get('url', 'unknown')}  \n"
+        f"**Duration:** {duration_str}  \n"
+        f"**Transcribed:** {'Whisper' if video_info.get('whisper') else 'YouTube subtitles'}\n"
+        f"\n"
+        f"---\n"
+        f"\n"
     )
 
 
@@ -764,7 +767,7 @@ def summarize_text(text: str, cmd: str, prompt: str) -> bool:
 # Web server
 # ---------------------------------------------------------------------------
 
-WEB_HTML = """<!DOCTYPE html>
+WEB_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -787,7 +790,17 @@ WEB_HTML = """<!DOCTYPE html>
   button:hover { opacity: 0.85; }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   #status { margin-top: 1rem; font-size: 0.875rem; color: var(--muted); }
-  #result { white-space: pre-wrap; font-family: monospace; font-size: 0.875rem; line-height: 1.6; max-height: 60vh; overflow-y: auto; }
+  #result { font-size: 0.875rem; line-height: 1.6; max-height: 60vh; overflow-y: auto; padding: 0.25rem; }
+  #result.plain { white-space: pre-wrap; font-family: monospace; }
+  #result.md { font-family: system-ui, sans-serif; }
+  #result.md h1 { font-size: 1.3rem; margin: 0 0 0.75rem; color: var(--accent); }
+  #result.md h2 { font-size: 1.15rem; margin: 0.75rem 0 0.4rem; }
+  #result.md h3 { font-size: 1rem; margin: 0.6rem 0 0.35rem; color: var(--text); }
+  #result.md p { margin: 0.35rem 0; }
+  #result.md strong { font-weight: 700; }
+  #result.md hr { border: none; border-top: 1px solid #334155; margin: 0.75rem 0; }
+  #result.md ul { margin: 0.35rem 0 0.35rem 1.5rem; }
+  #result.md li { margin: 0.15rem 0; }
   .error { color: var(--err); }
   .ok { color: var(--ok); }
   #download-row { display: none; margin-top: 0.75rem; gap: 0.5rem; }
@@ -820,6 +833,33 @@ WEB_HTML = """<!DOCTYPE html>
   </div>
 </div>
 <script>
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function inlineMd(s) {
+  return s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+function renderMarkdown(text) {
+  const t = escapeHtml(text);
+  const blocks = t.split(/\n\n+/);
+  const html = [];
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    const first = lines[0].trim();
+    if (first === '---') { html.push('<hr>'); continue; }
+    const hm = first.match(/^(#{1,3})\s+(.+)$/);
+    if (hm) { html.push('<h' + hm[1].length + '>' + inlineMd(hm[2]) + '</h' + hm[1].length + '>'); continue; }
+    if (first.match(/^[-*]\s/)) {
+      const items = lines.filter(l => l.trim().match(/^[-*]\s/)).map(l =>
+        '<li>' + inlineMd(l.trim().replace(/^[-*]\s/, '')) + '</li>');
+      html.push('<ul>' + items.join('') + '</ul>');
+      continue;
+    }
+    const joined = lines.map(l => l.endsWith('  ') ? l.slice(0,-2) + '<br>' : l).join(' ');
+    html.push('<p>' + inlineMd(joined) + '</p>');
+  }
+  return html.join('\n');
+}
 async function run() {
   const url = document.getElementById('url').value.trim();
   if (!url) return;
@@ -828,6 +868,8 @@ async function run() {
   const result = document.getElementById('result');
   const outputCard = document.getElementById('output-card');
   const dlRow = document.getElementById('download-row');
+  const fmt = document.getElementById('format').value;
+  const summarize = document.getElementById('summarize').checked;
   btn.disabled = true;
   status.innerHTML = '<span class="spinner"></span> Processing...';
   result.textContent = '';
@@ -835,9 +877,9 @@ async function run() {
   dlRow.style.display = 'none';
   const params = new URLSearchParams({ url });
   if (document.getElementById('lang').value) params.set('lang', document.getElementById('lang').value);
-  params.set('format', document.getElementById('format').value);
+  params.set('format', fmt);
   if (document.getElementById('timestamps').checked) params.set('timestamps', '1');
-  if (document.getElementById('summarize').checked) params.set('summarize', '1');
+  if (summarize) params.set('summarize', '1');
   try {
     const res = await fetch('/api?' + params);
     const data = await res.json();
@@ -846,7 +888,13 @@ async function run() {
     } else {
       status.innerHTML = '<span class="ok">' + data.title + '</span>';
       outputCard.style.display = 'block';
-      result.textContent = data.text;
+      if ((fmt === 'txt' || summarize) && fmt !== 'json' && fmt !== 'vtt') {
+        result.className = 'md';
+        result.innerHTML = renderMarkdown(data.text);
+      } else {
+        result.className = 'plain';
+        result.textContent = data.text;
+      }
       if (data.download) {
         dlRow.style.display = 'flex';
         document.getElementById('download-link').href = data.download;
@@ -859,7 +907,8 @@ async function run() {
 }
 document.getElementById('url').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
 async function copyText() {
-  const text = document.getElementById('result').textContent;
+  const result = document.getElementById('result');
+  const text = result.className === 'md' ? result.innerText : result.textContent;
   if (!text) return;
   await navigator.clipboard.writeText(text);
   const btn = document.getElementById('copy-btn');
