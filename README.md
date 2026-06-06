@@ -43,6 +43,10 @@ yttranscript URL --format json --chunk-size 60 --stdout | python ingest.py
 yttranscript URL --summarize
 yttranscript URL --summarize --summarize-cmd "llama-cli -m ~/models/gemma-4-E2B-it-NVFP4.gguf -ngl 99 --single-turn"
 
+# List latest videos from a channel
+yttranscript "https://youtube.com/@channel" --latest
+yttranscript "https://youtube.com/watch?v=..." --latest 5
+
 # Start web UI (browser interface)
 yttranscript --serve
 yttranscript --serve --port 9090
@@ -100,6 +104,7 @@ yttranscript URL --keep-vtt --keep-audio
 | `--summarize-prompt` | Prompt prepended to transcript (config: `summarize_prompt`) |
 | `--serve` | Start local web UI at `http://localhost:PORT` |
 | `--port` | Port for web UI (default: 8080) |
+| `--latest [N]` | List latest N videos from a channel (default: 10). Accepts channel or video URLs. |
 | `-V, --version` | Show version |
 
 ### Whisper Models

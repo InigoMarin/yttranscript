@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.22.0"
+__version__ = "1.23.0"
 
 import argparse
 import io
@@ -274,6 +274,48 @@ def list_subs(url: str) -> None:
     """List available subtitles for the video."""
     info(f"Available subtitles for:")
     run(["yt-dlp", "--list-subs", url], check=False)
+
+
+def list_channel_videos(url: str, limit: int = 10) -> None:
+    """List latest videos from a YouTube channel."""
+    info(f"Resolving channel from: {url}")
+    result = run(
+        ["yt-dlp", "--print", "%(channel_id)s", "--playlist-items", "1", url],
+        capture=True, check=False, quiet=True,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        error("Could not resolve channel ID from the provided URL.")
+        sys.exit(1)
+
+    channel_id = result.stdout.strip().splitlines()[0]
+    if not channel_id.startswith("UC"):
+        error(f"Invalid channel ID: {channel_id}")
+        sys.exit(1)
+
+    uploads_playlist = "UU" + channel_id[2:]
+    playlist_url = f"https://www.youtube.com/playlist?list={uploads_playlist}"
+    success(f"Channel: {channel_id}")
+
+    info(f"Fetching latest {limit} videos...")
+    result = run(
+        ["yt-dlp", "--playlist-items", f"1-{limit}",
+         "--print", "%(upload_date)s|%(id)s|%(title)s",
+         playlist_url],
+        capture=True, check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        error("Could not fetch channel videos.")
+        sys.exit(1)
+
+    print()
+    for line in result.stdout.strip().splitlines():
+        parts = line.split("|", 2)
+        if len(parts) < 3:
+            continue
+        date_raw, vid, title = parts
+        date_str = f"{date_raw[:4]}-{date_raw[4:6]}-{date_raw[6:8]}" if len(date_raw) == 8 and date_raw != "NA" else "Unknown"
+        print(f"Fecha: {date_str} | Titulo: {title} | URL: https://www.youtube.com/watch?v={vid}")
+    print()
 
 
 def get_video_info(url: str) -> dict:
@@ -1277,6 +1319,7 @@ def build_parser() -> argparse.ArgumentParser:
             '  yttranscript URL --lang es --format vtt\n'
             "  yttranscript URL --whisper --whisper-model small\n"
             "  yttranscript URL --list-subs\n"
+            "  yttranscript URL --latest 5\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -1400,6 +1443,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=8080,
         help="Port for web UI (default: 8080).",
     )
+    parser.add_argument(
+        "--latest",
+        nargs="?",
+        const=10,
+        type=int,
+        default=None,
+        metavar="N",
+        help="List latest N videos from a channel (default: 10). Accepts channel or video URLs.",
+    )
     return parser
 
 
@@ -1441,6 +1493,10 @@ def main() -> None:
 
     if not args.url:
         parser.error("a YouTube URL is required (or use --serve for web UI)")
+
+    if args.latest is not None:
+        list_channel_videos(args.url, args.latest)
+        return
 
     config = load_config()
 
