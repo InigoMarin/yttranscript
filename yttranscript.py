@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.14.3"
+__version__ = "1.14.4"
 
 import argparse
 import io
@@ -657,9 +657,8 @@ def _extract_vtt_plain_text(vtt_path: Path) -> str:
 def summarize_text(text: str, cmd: str, prompt: str) -> bool:
     """Send text to an external command for summarization.
 
-    Sends prompt + transcript via stdin. Captures stdout to a temp file
-    (more reliable than PIPE — some CLI tools detect pipes and redirect),
-    extracts only the model's response, and cleans thinking blocks.
+    Uses `script` to capture all terminal output (including /dev/tty writes)
+    into a temp file. Extracts only the model's response and cleans thinking.
     """
     full_input = f"{prompt} {text}"
     cmd_parts = shlex.split(cmd)
@@ -672,39 +671,56 @@ def summarize_text(text: str, cmd: str, prompt: str) -> bool:
     tmp_path = tmp.name
     tmp.close()
 
+    # Write input to a temp file so script can feed it via shell
+    input_tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
+    input_tmp.write(full_input)
+    input_tmp.close()
+
+    # Build shell command: pipe input file into the summarize command
+    escaped_cmd = ' '.join(shlex.quote(p) for p in cmd_parts)
+    shell_cmd = f"cat {shlex.quote(input_tmp.name)} | {escaped_cmd}"
+
     try:
-        with open(tmp_path, 'w') as stdout_file:
-            result = subprocess.run(
-                cmd_parts,
-                input=full_input,
-                stdout=stdout_file,
-                stderr=subprocess.STDOUT,
-                text=True,
-                check=False,
-                timeout=300,
-            )
+        result = subprocess.run(
+            ['script', '-qec', shell_cmd, tmp_path],
+            input='',
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+            timeout=300,
+        )
     except subprocess.TimeoutExpired:
         os.unlink(tmp_path)
+        os.unlink(input_tmp.name)
         error("Summarize command timed out after 5 minutes.")
         return False
     except FileNotFoundError:
         os.unlink(tmp_path)
+        os.unlink(input_tmp.name)
         error(f"Summarize command not found: {cmd_parts[0]}")
         return False
+
+    os.unlink(input_tmp.name)
 
     if result.returncode != 0:
         os.unlink(tmp_path)
         error("Summarize command failed.")
         return False
 
-    output = Path(tmp_path).read_text().strip()
+    raw = Path(tmp_path).read_text()
     os.unlink(tmp_path)
+
+    # script prepends a header line and wraps output; strip ANSI/control chars
+    output = raw.replace('\r', '').strip()
+    # Remove ANSI escape sequences
+    output = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', output)
 
     if not output:
         error("Summarize command produced no output.")
         return False
 
-    # llama-cli stdout structure:
+    # llama-cli output structure:
     #   [banner, loading, commands...]
     #   > <full prompt>         ← prompt echo (can be very long)
     #   [model response]        ← what we want
@@ -723,7 +739,7 @@ def summarize_text(text: str, cmd: str, prompt: str) -> bool:
         response_lines.append(line)
 
     clean = "\n".join(response_lines).strip()
-    # Strip backspace chars and spinner residue (|, /, -, \) at line starts
+    # Strip backspace chars and spinner residue
     clean = clean.replace("\x08", "")
     clean = re.sub(r"^[|/\\-]+\s*", "", clean, flags=re.MULTILINE)
     # Remove [Start thinking]...[End thinking] blocks (closed)
