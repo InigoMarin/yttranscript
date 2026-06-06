@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.14.1"
+__version__ = "1.14.2"
 
 import argparse
 import io
@@ -16,6 +16,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -656,9 +657,9 @@ def _extract_vtt_plain_text(vtt_path: Path) -> str:
 def summarize_text(text: str, cmd: str, prompt: str) -> bool:
     """Send text to an external command for summarization.
 
-    Sends prompt + transcript via stdin. Captures stdout, extracts only
-    the model's response (between prompt echo and stats line), and cleans
-    thinking blocks.
+    Sends prompt + transcript via stdin. Captures stdout to a temp file
+    (more reliable than PIPE — some CLI tools detect pipes and redirect),
+    extracts only the model's response, and cleans thinking blocks.
     """
     full_input = f"{prompt} {text}"
     cmd_parts = shlex.split(cmd)
@@ -667,28 +668,38 @@ def summarize_text(text: str, cmd: str, prompt: str) -> bool:
     debug(f"$ echo '...' | {' '.join(cmd_parts[:4])}...")
     info("Summarizing... (this may take a while)")
 
+    tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
+    tmp_path = tmp.name
+    tmp.close()
+
     try:
-        result = subprocess.run(
-            cmd_parts,
-            input=full_input,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            check=False,
-            timeout=300,
-        )
+        with open(tmp_path, 'w') as stdout_file:
+            result = subprocess.run(
+                cmd_parts,
+                input=full_input,
+                stdout=stdout_file,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                check=False,
+                timeout=300,
+            )
     except subprocess.TimeoutExpired:
+        os.unlink(tmp_path)
         error("Summarize command timed out after 5 minutes.")
         return False
     except FileNotFoundError:
+        os.unlink(tmp_path)
         error(f"Summarize command not found: {cmd_parts[0]}")
         return False
 
     if result.returncode != 0:
+        os.unlink(tmp_path)
         error("Summarize command failed.")
         return False
 
-    output = result.stdout.strip()
+    output = Path(tmp_path).read_text().strip()
+    os.unlink(tmp_path)
+
     if not output:
         error("Summarize command produced no output.")
         return False
