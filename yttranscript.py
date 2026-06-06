@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.21.0"
+__version__ = "1.22.0"
 
 import argparse
 import io
@@ -18,7 +18,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.parse
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 try:
@@ -752,7 +752,13 @@ WEB_HTML = r"""<!DOCTYPE html>
   #result.md li { margin: 0.15rem 0; }
   .error { color: var(--err); }
   .ok { color: var(--ok); }
+  #log { max-height: 180px; overflow-y: auto; margin-top: 0.75rem; font-size: 0.8rem; font-family: monospace; display: none; }
+  .log-info { color: var(--muted); }
+  .log-success { color: var(--ok); }
+  .log-warn { color: #fbbf24; }
+  .log-error { color: var(--err); }
   #download-row { display: none; margin-top: 0.75rem; gap: 0.5rem; }
+  button.cancel { background: var(--err); }
   .spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
@@ -776,6 +782,7 @@ WEB_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
     <div id="status"></div>
+    <div id="log"></div>
   </div>
   <div class="card" id="output-card" style="display:none;">
     <div id="result"></div>
@@ -783,6 +790,7 @@ WEB_HTML = r"""<!DOCTYPE html>
 </div>
 <script>
 let lastResult = null;
+let currentController = null;
 function escapeHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
@@ -810,55 +818,98 @@ function renderMarkdown(text) {
   }
   return html.join('\n');
 }
+function addLog(message, type) {
+  const log = document.getElementById('log');
+  log.style.display = 'block';
+  const div = document.createElement('div');
+  div.className = 'log-' + type;
+  div.textContent = message;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+function setStatus(text, cls) {
+  const status = document.getElementById('status');
+  status.textContent = '';
+  const span = document.createElement('span');
+  if (cls) span.className = cls;
+  span.textContent = text;
+  status.appendChild(span);
+}
 async function run() {
+  const btn = document.getElementById('btn');
+  if (currentController) {
+    currentController.abort();
+    return;
+  }
   const url = document.getElementById('url').value.trim();
   if (!url) return;
-  const btn = document.getElementById('btn');
   const status = document.getElementById('status');
   const result = document.getElementById('result');
   const outputCard = document.getElementById('output-card');
   const dlRow = document.getElementById('download-row');
+  const log = document.getElementById('log');
   const fmt = document.getElementById('format').value;
   const summarize = document.getElementById('summarize').checked;
-  btn.disabled = true;
-  status.innerHTML = '<span class="spinner"></span> Processing...';
+  log.innerHTML = '';
+  log.style.display = 'none';
   result.textContent = '';
   outputCard.style.display = 'none';
   dlRow.style.display = 'none';
+  setStatus('', '');
+  status.innerHTML = '<span class="spinner"></span> Processing...';
+  btn.textContent = 'Cancel';
+  btn.className = 'cancel';
   const params = new URLSearchParams({ url });
   if (document.getElementById('lang').value) params.set('lang', document.getElementById('lang').value);
   params.set('format', fmt);
   if (document.getElementById('timestamps').checked) params.set('timestamps', '1');
   if (summarize) params.set('summarize', '1');
-  function setStatus(text, cls) {
-    status.textContent = '';
-    const span = document.createElement('span');
-    if (cls) span.className = cls;
-    span.textContent = text;
-    status.appendChild(span);
-  }
+  const controller = new AbortController();
+  currentController = controller;
   try {
-    const res = await fetch('/api?' + params);
-    const data = await res.json();
-    if (data.error) {
-      setStatus(data.error, 'error');
-    } else {
-      setStatus(data.title, 'ok');
-      outputCard.style.display = 'block';
-      lastResult = { text: data.text, filename: data.filename || 'transcript.txt' };
-      if ((fmt === 'txt' || summarize) && fmt !== 'json' && fmt !== 'vtt') {
-        result.className = 'md';
-        result.innerHTML = renderMarkdown(data.text);
-      } else {
-        result.className = 'plain';
-        result.textContent = data.text;
+    const res = await fetch('/api?' + params, { signal: controller.signal });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const raw = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        if (!raw.startsWith('data: ')) continue;
+        const data = JSON.parse(raw.slice(6));
+        if (data.type === 'done') {
+          setStatus(data.title, 'ok');
+          outputCard.style.display = 'block';
+          lastResult = { text: data.text, filename: data.filename || 'transcript.txt' };
+          if ((fmt === 'txt' || summarize) && fmt !== 'json' && fmt !== 'vtt') {
+            result.className = 'md';
+            result.innerHTML = renderMarkdown(data.text);
+          } else {
+            result.className = 'plain';
+            result.textContent = data.text;
+          }
+          dlRow.style.display = 'flex';
+        } else if (data.type === 'error') {
+          setStatus(data.message, 'error');
+        } else {
+          addLog(data.message, data.type);
+        }
       }
-      dlRow.style.display = 'flex';
     }
   } catch (e) {
-    setStatus('Request failed: ' + e.message, 'error');
+    if (e.name === 'AbortError') {
+      setStatus('Cancelled.', 'error');
+    } else {
+      setStatus('Request failed: ' + e.message, 'error');
+    }
   }
-  btn.disabled = false;
+  currentController = null;
+  btn.textContent = 'Transcribe';
+  btn.className = '';
 }
 document.getElementById('url').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
 async function copyText() {
@@ -921,10 +972,24 @@ class TranscriptHandler(BaseHTTPRequestHandler):
         timestamps = params.get("timestamps", ["0"])[0] == "1"
         summarize = params.get("summarize", ["0"])[0] == "1"
 
-        buf = io.StringIO()
-        original_stdout = sys.stdout
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+
+        wfile = self.wfile
+
+        def send_event(data: dict):
+            wfile.write(f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode())
+            wfile.flush()
+
+        def log_callback(level: str, msg: str):
+            send_event({"type": level, "message": msg})
 
         config = load_config()
+        buf = io.StringIO()
+        original_stdout = sys.stdout
 
         try:
             sys.stdout = buf
@@ -939,16 +1004,22 @@ class TranscriptHandler(BaseHTTPRequestHandler):
                 summarize_timeout=resolve_value(None, config, "summarize_timeout"),
                 fallback_lang=resolve_value(None, config, "fallback_lang"),
                 stdout_mode=True,
+                log_callback=log_callback,
             )
-            text = buf.getvalue()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return
         except SystemExit:
-            text = buf.getvalue()
+            pass
         except Exception as e:
-            self._json_response({"error": str(e)})
+            try:
+                send_event({"type": "error", "message": str(e)})
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
             return
         finally:
             sys.stdout = original_stdout
 
+        text = buf.getvalue()
         title = "transcript"
         try:
             title = get_video_title(url)
@@ -958,7 +1029,10 @@ class TranscriptHandler(BaseHTTPRequestHandler):
         ext = {"json": ".json", "txt": ".txt", "vtt": ".vtt"}.get(fmt, ".txt")
         filename = _sanitize_filename(title) + ext
 
-        self._json_response({"title": title, "text": text, "filename": filename})
+        try:
+            send_event({"type": "done", "text": text, "title": title, "filename": filename})
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
 
     def _json_response(self, data):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
@@ -971,7 +1045,7 @@ class TranscriptHandler(BaseHTTPRequestHandler):
 
 def run_server(port: int) -> None:
     """Start the local web server."""
-    server = HTTPServer(("127.0.0.1", port), TranscriptHandler)
+    server = ThreadingHTTPServer(("127.0.0.1", port), TranscriptHandler)
     success(f"Web UI: http://localhost:{port}")
     success("Press Ctrl-C to stop.")
     try:
@@ -1072,19 +1146,28 @@ def process_video(
     summarize_prompt: str | None = None,
     summarize_timeout: int = 300,
     fallback_lang: str = "en",
+    log_callback=None,
 ) -> None:
     """Main processing pipeline."""
     ensure_yt_dlp()
 
     # Redirect info messages to stderr when piping to stdout
     if stdout_mode:
-        global info, success, warn
-        def _info(msg): print(f"{Colors.BLUE}›{Colors.RESET} {msg}", file=sys.stderr)
-        def _success(msg): print(f"{Colors.GREEN}✓{Colors.RESET} {msg}", file=sys.stderr)
-        def _warn(msg): print(f"{Colors.YELLOW}⚠{Colors.RESET} {msg}", file=sys.stderr)
+        global info, success, warn, error
+        if log_callback:
+            def _info(msg): log_callback("info", msg)
+            def _success(msg): log_callback("success", msg)
+            def _warn(msg): log_callback("warn", msg)
+            def _error(msg): log_callback("error", msg)
+        else:
+            def _info(msg): print(f"{Colors.BLUE}›{Colors.RESET} {msg}", file=sys.stderr)
+            def _success(msg): print(f"{Colors.GREEN}✓{Colors.RESET} {msg}", file=sys.stderr)
+            def _warn(msg): print(f"{Colors.YELLOW}⚠{Colors.RESET} {msg}", file=sys.stderr)
+            def _error(msg): print(f"{Colors.RED}✗{Colors.RESET} {msg}", file=sys.stderr)
         info = _info
         success = _success
         warn = _warn
+        error = _error
 
     if list_only:
         list_subs(url)

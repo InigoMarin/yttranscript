@@ -41,7 +41,7 @@ yttranscript URL --format json --chunk-size 60 --stdout | python ingest.py
 
 # Summarize with AI (pipes transcript to external command)
 yttranscript URL --summarize
-yttranscript URL --summarize --summarize-cmd "llama-cli -m model.gguf --temp 0.7"
+yttranscript URL --summarize --summarize-cmd "llama-cli -m ~/models/gemma-4-E2B-it-NVFP4.gguf -ngl 99 --single-turn"
 
 # Start web UI (browser interface)
 yttranscript --serve
@@ -122,10 +122,12 @@ On first run, `yttranscript` creates a config file at `~/.config/yttranscript/co
 
 # lang = "es"
 # format = "txt"
-# timestamps = true
+# timestamps = false
 # chunk_size = 30
-# summarize_cmd = "llama-cli -m ~/.local/share/models/model.gguf --single-turn --temp 0.7 -n 1024"
-# summarize_prompt = "Resume el video"
+# summarize_cmd = "llama-cli -m ~/models/gemma-4-E2B-it-NVFP4.gguf -ngl 99 -fa 1 -ub 1024 -b 1024 --single-turn"
+# summarize_prompt = "Resume el video en castellano. Formatealo para que sea facil de leer y respete la normativa de markdown"
+# summarize_timeout = 300
+# fallback_lang = "en"
 # whisper_model = "medium"
 # whisper_device = "gpu"
 # whisper_dir = "/home/user/.cache/whisper"
@@ -150,9 +152,11 @@ yttranscript --serve
 
 Features:
 - Paste YouTube URL and transcribe from the browser
+- Real-time progress streaming via SSE (see each subtitle attempt, Whisper progress)
+- Cancel button to abort in-progress transcription
 - Select language, format (txt/json/vtt), timestamps, summarize
 - Markdown rendering for txt and summarize output (headers, bold, lists)
-- Download results directly from the browser
+- Download or copy results directly from the browser
 - Runs on localhost only (no external access)
 
 ## Dependencies
@@ -164,7 +168,7 @@ Features:
 ## How It Works
 
 1. Auto-detect video language (or use `--lang`)
-2. Try manual subtitles: exact lang → wildcard (e.g. `es.*`) → English fallback
+2. Try manual subtitles: exact lang → wildcard (e.g. `es.*`) → fallback language
 3. Fall back to auto-generated subtitles (same language chain)
 4. Last resort: download audio + transcribe with Whisper (GPU with CPU fallback)
 5. Convert VTT to clean text with Markdown header (title, URL, duration, source)
@@ -195,19 +199,19 @@ yttranscript URL --stdout | wl-copy
 
 ```bash
 # Configure once in ~/.config/yttranscript/config.toml:
-#   summarize_cmd = "llama-cli -m model.gguf --single-turn --temp 0.7 -n 1024"
-#   summarize_prompt = "Resume el video"
+#   summarize_cmd = "llama-cli -m ~/models/gemma-4-E2B-it-NVFP4.gguf -ngl 99 -fa 1 -ub 1024 -b 1024 --single-turn"
+#   summarize_prompt = "Resume el video en castellano. Formatealo para que sea facil de leer y respete la normativa de markdown"
 
 # Then just:
 yttranscript URL --summarize
 
 # Or specify inline:
 yttranscript URL --summarize \
-  --summarize-cmd "llama-cli -m model.gguf --temp 0.7 -n 1024" \
+  --summarize-cmd "llama-cli -m ~/models/gemma-4-E2B-it-NVFP4.gguf -ngl 99 --single-turn" \
   --summarize-prompt "Resume en 5 bullets"
 ```
 
-How it works: yttranscript downloads the transcript, extracts plain text, and sends it to `summarize_cmd` with `summarize_prompt` prepended. The output is captured and cleaned (banner, stats, thinking blocks removed). Currently optimized for llama.cpp's `llama-cli`; other tools may work but output parsing is tailored to llama-cli's format.
+How it works: yttranscript downloads the transcript, extracts plain text, and sends it to `summarize_cmd` with `summarize_prompt` prepended. Output is captured via a pseudo-terminal (`script(1)`) and cleaned (banner, stats, thinking blocks removed). The timeout is configurable via `summarize_timeout` in the config. Currently optimized for llama.cpp's `llama-cli`; other tools may work but output parsing is tailored to llama-cli's format.
 
 ```bash
 yttranscript URL --format json --stdout
