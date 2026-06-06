@@ -5,7 +5,7 @@ Download transcripts (subtitles/captions) from YouTube videos.
 Falls back to Whisper transcription when no subtitles are available.
 """
 
-__version__ = "1.14.4"
+__version__ = "1.15.0"
 
 import argparse
 import io
@@ -1099,6 +1099,9 @@ def process_video(
                         info("Extracting text for summarization...")
                         text = _extract_vtt_plain_text(vtt_file)
                         vtt_file.unlink(missing_ok=True)
+                        print(f"Video: {video_title}")
+                        print(f"URL: {url}")
+                        print()
                         success(f"Piping transcript to: {summarize_cmd}")
                         if not summarize_text(text, summarize_cmd, summarize_prompt or ""):
                             sys.exit(1)
@@ -1183,6 +1186,9 @@ def process_video(
                 info("Extracting text for summarization...")
                 text = _extract_vtt_plain_text(vtt_file)
                 vtt_file.unlink(missing_ok=True)
+                print(f"Video: {video_title}")
+                print(f"URL: {url}")
+                print()
                 success(f"Piping transcript to: {summarize_cmd}")
                 if not summarize_text(text, summarize_cmd, summarize_prompt or ""):
                     sys.exit(1)
