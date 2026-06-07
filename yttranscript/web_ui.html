@@ -43,7 +43,14 @@
   .ok { color: var(--ok); }
   input[type="text"].invalid { border-color: var(--err); }
   .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.5rem; }
-  .hint.warn { color: var(--err); }
+  .hint.warn { color: #fbbf24; }
+  button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  button.secondary:hover { border-color: var(--accent); }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 0.75rem; font-size: 0.75rem; }
+  .meta-chip { background: var(--input-bg); padding: 0.2rem 0.6rem; border-radius: 4px; border: 1px solid var(--border); }
+  .meta-chip b { color: var(--muted); font-weight: 600; margin-right: 0.3em; }
+  .meta-chip a { color: var(--accent); text-decoration: underline; word-break: break-all; }
+  #output-card .stats { margin: 0.5rem 0; }
   #status a { color: var(--ok); text-decoration: underline; }
   #status a:hover { opacity: 0.8; }
   .stats { display: none; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; font-size: 0.7rem; color: var(--muted); }
@@ -65,7 +72,7 @@
   @media print {
     body { background: #fff !important; color: #000 !important; padding: 0 !important; }
     .card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
-    #theme-toggle, #log, #download-row, #log-toggle, #running-hint, #summarize-hint, .stats, button { display: none !important; }
+    #theme-toggle, #log, #download-row, #log-toggle, #running-hint, #summarize-hint, .stats, .meta-row, button { display: none !important; }
     #result { max-height: none !important; overflow: visible !important; }
     a { color: #000 !important; text-decoration: underline; }
   }
@@ -75,7 +82,7 @@
     .row label { width: 100%; }
     .lang-input { width: 100%; }
     select { width: 100%; }
-    button:not(.theme-btn) { width: 100%; }
+    button:not(.theme-btn):not(.secondary) { width: 100%; }
     .card { padding: 1rem; }
     h1 { font-size: 1.25rem; }
   }
@@ -98,25 +105,25 @@
       <label>Format <select id="format"><option value="txt">txt</option><option value="json">json</option><option value="vtt">vtt</option><option value="srt">srt</option></select></label>
       <label><input type="checkbox" id="timestamps"> Timestamps</label>
       <label><input type="checkbox" id="summarize"> Summarize</label>
-      <label>Save as <input type="text" id="filename" placeholder="(auto)" class="lang-input" style="width:9rem;"></label>
+      <input type="text" id="filename" placeholder="Save as (auto)" class="lang-input" style="width:9rem;" aria-label="Save as filename">
     </div>
     <div class="row">
       <button id="btn" onclick="run()">Transcribe</button>
       <div id="download-row">
         <button onclick="copyText()" id="copy-btn">Copy</button>
         <button onclick="downloadFile()" id="dl-btn">Download</button>
-        <button onclick="run()" id="rerun-btn">Re-run</button>
+        <button onclick="run()" id="rerun-btn" class="secondary">Re-run</button>
       </div>
     </div>
     <div id="summarize-hint" class="hint warn" style="display:none;">Requires <code>summarize_cmd</code> to be set in config to actually summarize.</div>
     <div id="lang-badge" class="hint" style="display:none;">🌐 Language: <span id="lang-badge-text"></span></div>
     <div id="running-hint" class="hint" style="display:none;">⏳ Still working — Whisper can take several minutes for long videos.</div>
     <div id="status"></div>
-    <div class="stats"><span id="stats-words"></span><span id="stats-chars"></span><span id="stats-read"></span></div>
     <button id="log-toggle" class="theme-btn" style="display:none;" onclick="toggleLog()">▼ Logs</button>
     <div id="log"></div>
   </div>
   <div class="card" id="output-card" style="display:none;">
+    <div class="stats"><span id="stats-words"></span><span id="stats-chars"></span><span id="stats-read"></span></div>
     <div id="result"></div>
   </div>
 </div>
@@ -222,6 +229,21 @@ function renderMarkdown(text) {
       const items = lines.filter(l => l.trim().match(/^[-*]\s/)).map(l =>
         '<li>' + inlineMd(l.trim().replace(/^[-*]\s/, '')) + '</li>');
       html.push('<ul>' + items.join('') + '</ul>');
+      continue;
+    }
+    const metaRe = /^\*\*([A-Z][A-Za-z]*):\*\*\s*(.+?)\s*$/;
+    const nonEmpty = lines.filter(l => l.trim());
+    const metaMatches = nonEmpty.map(l => l.match(metaRe)).filter(Boolean);
+    if (metaMatches.length === nonEmpty.length && metaMatches.length > 0) {
+      const chips = metaMatches.map(m => {
+        const label = m[1];
+        let val = m[2];
+        if (/^https?:\/\//.test(val)) {
+          val = '<a href="' + val + '" target="_blank" rel="noopener noreferrer">' + val + '</a>';
+        }
+        return '<span class="meta-chip"><b>' + label + ':</b> ' + val + '</span>';
+      });
+      html.push('<div class="meta-row">' + chips.join('') + '</div>');
       continue;
     }
     const joined = lines.map(l => l.endsWith('  ') ? l.slice(0,-2) + '<br>' : l).join(' ');
@@ -351,13 +373,7 @@ async function run() {
         catch (e) { addLog('Malformed event from server', 'warn'); continue; }
         if (!data || typeof data.type !== 'string') continue;
         if (data.type === 'done') {
-          status.innerHTML = '';
-          const a = document.createElement('a');
-          a.href = url;
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
-          a.textContent = data.title;
-          status.appendChild(a);
+          status.innerHTML = '<span class="ok">✓ Done</span>';
           outputCard.style.display = 'block';
           lastResult = { text: data.text, filename: data.filename || 'transcript.txt', url: url };
           if ((fmt === 'txt' || summarize) && fmt !== 'json' && fmt !== 'vtt' && fmt !== 'srt') {
