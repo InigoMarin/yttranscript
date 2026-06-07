@@ -254,6 +254,7 @@ Features:
 - Cancel button to abort in-progress transcription
 - Select language, format (txt/json/vtt), timestamps, summarize
 - Markdown rendering for txt and summarize output (headers, bold, lists)
+- Browser notifications when transcription completes (enable via the bell icon in the header; falls back to flashing the tab title)
 - Download or copy results directly from the browser
 - Runs on localhost only (no external access)
 - CSRF protection (cross-origin browser requests blocked via `Origin` check)

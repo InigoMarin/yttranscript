@@ -66,6 +66,8 @@
   button.cancel { background: var(--err); }
   .theme-btn { background: none; border: 1px solid var(--border); color: var(--muted); padding: 0.3rem 0.6rem; font-size: 1.1rem; line-height: 1; border-radius: 6px; cursor: pointer; transition: color 0.2s, border-color 0.2s; width: auto; }
   .theme-btn:hover { color: var(--text); border-color: var(--accent); }
+  .theme-btn.enabled { color: var(--ok); border-color: var(--ok); }
+  .theme-btn.muted { opacity: 0.5; }
   .spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -97,7 +99,7 @@
   </div>
 </noscript>
 <div class="container">
-  <h1>&#9733; yttranscript <button id="theme-toggle" class="theme-btn" title="Toggle theme">&#9788;</button></h1>
+  <h1>&#9733; yttranscript <span style="display:flex;gap:0.4rem;"><button id="theme-toggle" class="theme-btn" title="Toggle theme">&#9788;</button><button id="notify-toggle" class="theme-btn" title="Enable notifications" style="display:none;">&#128276;</button></span></h1>
   <div class="card">
     <input type="text" id="url" placeholder="Paste YouTube URL..." />
     <div class="row">
@@ -160,6 +162,28 @@ function updateThemeIcon() {
   document.getElementById('theme-toggle').addEventListener('click', function() {
     setTheme(currentTheme() === 'light' ? 'dark' : 'light');
   });
+})();
+(function initNotify() {
+  const btn = document.getElementById('notify-toggle');
+  if (!("Notification" in window)) return;
+  btn.style.display = 'inline-block';
+  function refresh() {
+    const p = Notification.permission;
+    btn.textContent = p === 'granted' ? '\u{1F514}' : p === 'denied' ? '\u{1F507}' : '\u{1F514}';
+    btn.title = p === 'granted' ? 'Notifications enabled'
+              : p === 'denied'  ? 'Notifications blocked (enable in browser settings)'
+              : 'Enable notifications';
+    btn.classList.toggle('enabled', p === 'granted');
+    btn.classList.toggle('muted', p === 'denied');
+  }
+  btn.addEventListener('click', function() {
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().then(refresh);
+    } else {
+      refresh();
+    }
+  });
+  refresh();
 })();
 const FORM_KEY = 'form-state';
 function saveForm() {
@@ -317,21 +341,29 @@ function setStatus(text, cls) {
   span.textContent = text;
   status.appendChild(span);
 }
-function notifyDone(title) {
-  if (!("Notification" in window)) return;
-  if (!document.hidden) return;
-  const fire = () => {
-    const n = new Notification("✓ Transcripción lista", {
-      body: title || "yttranscript",
-      icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text x=%228%22 y=%2213%22 font-size=%2214%22 text-anchor=%22middle%22 fill=%22%237c3aed%22>%E2%98%85</text></svg>"
-    });
-    n.onclick = () => { window.focus(); n.close(); };
+let _origTitle = document.title;
+let _titleTimer = null;
+function flashTabTitle(title) {
+  if (document.hasFocus()) return;
+  clearTimeout(_titleTimer);
+  _origTitle = document.title;
+  document.title = '(\u2713) ' + (title || 'Transcripci\u00f3n lista');
+  const restore = () => {
+    document.title = _origTitle;
+    window.removeEventListener('focus', restore);
+    clearTimeout(_titleTimer);
   };
-  if (Notification.permission === "granted") {
-    fire();
-  } else if (Notification.permission === "default") {
-    Notification.requestPermission().then(p => { if (p === "granted") fire(); });
-  }
+  window.addEventListener('focus', restore);
+  _titleTimer = setTimeout(restore, 15000);
+}
+function notifyDone(title) {
+  flashTabTitle(title);
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const n = new Notification("\u2713 Transcripci\u00f3n lista", {
+    body: title || "yttranscript",
+    icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text x=%228%22 y=%2213%22 font-size=%2214%22 text-anchor=%22middle%22 fill=%22%237c3aed%22>%E2%98%85</text></svg>"
+  });
+  n.onclick = () => { window.focus(); n.close(); };
 }
 async function run() {
   const btn = document.getElementById('btn');
