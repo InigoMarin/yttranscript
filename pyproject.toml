@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yttranscript"
-version = "1.23.0"
+version = "2.0.0"
 description = "Download YouTube video transcripts (subtitles/captions) with Whisper fallback."
 readme = "README.md"
 license = "MIT"
@@ -25,6 +25,18 @@ classifiers = [
     "Topic :: Multimedia :: Video",
     "Topic :: Utilities",
 ]
+dependencies = [
+    "yt-dlp",
+]
+
+[project.optional-dependencies]
+whisper = ["openai-whisper"]
+dev = [
+    "pytest>=7",
+    "pytest-cov>=4",
+    "pyflakes>=3",
+    "build",
+]
 
 [project.scripts]
 yttranscript = "yttranscript:main"
@@ -32,5 +44,13 @@ yttranscript = "yttranscript:main"
 [project.urls]
 Homepage = "https://github.com/ima/yttranscript"
 
-[tool.setuptools]
-py-modules = ["yttranscript"]
+[tool.setuptools.packages.find]
+include = ["yttranscript*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers"
+filterwarnings = [
+    "error::UserWarning",
+]

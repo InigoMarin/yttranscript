@@ -105,17 +105,19 @@ yttranscript URL --keep-vtt --keep-audio
 | `--serve` | Start local web UI at `http://localhost:PORT` |
 | `--port` | Port for web UI (default: 8080) |
 | `--latest [N]` | List latest N videos from a channel (default: 10). Accepts channel or video URLs. |
+| `--work-dir` | Directory for intermediate files (subtitle/audio/VTT). Default: private tempdir. |
+| `--output-dir` | Directory where the final transcript is saved. Default: current directory. |
 | `-V, --version` | Show version |
 
 ### Whisper Models
 
 | Model | Size | Speed | Accuracy |
 |---|---|---|---|
-| `tiny` | ~1 GB | Fastest | Lowest |
-| `base` | ~1 GB | Fast | Good (default) |
-| `small` | ~2 GB | Medium | Better |
-| `medium` | ~5 GB | Slow | Very good |
-| `large` | ~10 GB | Slowest | Best |
+| `tiny` | ~75 MB | Fastest | Lowest |
+| `base` | ~145 MB | Fast | Good (default) |
+| `small` | ~480 MB | Medium | Better |
+| `medium` | ~1.5 GB | Slow | Very good |
+| `large` | ~3 GB | Slowest | Best |
 
 ## Configuration
 
@@ -163,12 +165,16 @@ Features:
 - Markdown rendering for txt and summarize output (headers, bold, lists)
 - Download or copy results directly from the browser
 - Runs on localhost only (no external access)
+- CSRF protection (cross-origin browser requests blocked via `Origin` check)
+- DNS-rebinding protection (`Host` header must be `localhost` / `127.0.0.1`)
+- Concurrency limit (max 2 simultaneous transcriptions to prevent resource exhaustion)
 
 ## Dependencies
 
 - **yt-dlp** - installed automatically if missing
 - **openai-whisper** - only needed for Whisper fallback, prompted before install
 - **ffmpeg** - required by Whisper for audio processing
+- **script** (BSD/Linux `util-linux`) - required by `--summarize` to capture command output via pseudo-terminal
 
 ## How It Works
 

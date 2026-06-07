@@ -4,7 +4,7 @@ VERSION := 1.23.0
 PKGNAME := yttranscript
 TARBALL := $(PKGNAME)-$(VERSION).tar.gz
 SRC_DIR := $(PKGNAME)-$(VERSION)
-SRC_FILES := yttranscript.py pyproject.toml README.md LICENSE
+SRC_FILES := yttranscript pyproject.toml README.md LICENSE
 
 all: pkg
 
@@ -18,8 +18,9 @@ help:
 $(TARBALL): $(SRC_FILES)
 	rm -rf $(SRC_DIR)
 	mkdir -p $(SRC_DIR)
-	cp $(SRC_FILES) $(SRC_DIR)/
-	tar czf $(TARBALL) $(SRC_DIR)
+	cp -r $(SRC_FILES) $(SRC_DIR)/
+	find $(SRC_DIR) -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	tar czf $(TARBALL) --exclude='__pycache__' $(SRC_DIR)
 	@echo "Built $(TARBALL)"
 
 pkg: $(TARBALL)
