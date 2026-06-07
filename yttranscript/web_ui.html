@@ -5,18 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>yttranscript</title>
 <style>
-  :root { --bg: #0f0f0f; --surface: #1a1a2e; --accent: #7c3aed; --text: #e2e8f0; --muted: #94a3b8; --ok: #22c55e; --err: #ef4444; }
+  :root { --bg: #0f0f0f; --surface: #1a1a2e; --accent: #7c3aed; --text: #e2e8f0; --muted: #94a3b8; --ok: #22c55e; --err: #ef4444; --border: #334155; --input-bg: #0f0f0f; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f1f5f9; --surface: #ffffff; --text: #1e293b; --muted: #64748b; --border: #cbd5e1; --input-bg: #ffffff; }
+  }
+  html.light { --bg: #f1f5f9; --surface: #ffffff; --text: #1e293b; --muted: #64748b; --border: #cbd5e1; --input-bg: #ffffff; }
+  html.dark { --bg: #0f0f0f; --surface: #1a1a2e; --text: #e2e8f0; --muted: #94a3b8; --border: #334155; --input-bg: #0f0f0f; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; justify-content: center; padding: 2rem; }
   .container { max-width: 800px; width: 100%; }
-  h1 { font-size: 1.5rem; margin-bottom: 1.5rem; color: var(--accent); }
+  h1 { font-size: 1.5rem; margin-bottom: 1.5rem; color: var(--accent); display: flex; align-items: center; justify-content: space-between; }
   .card { background: var(--surface); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; }
-  input[type="text"] { width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #334155; background: #0f0f0f; color: var(--text); font-size: 1rem; }
+  input[type="text"] { width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); font-size: 1rem; }
   input[type="text"]:focus { outline: none; border-color: var(--accent); }
   .row { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; align-items: center; }
   select, input[type="checkbox"] { accent-color: var(--accent); }
-  select { padding: 0.5rem; border-radius: 6px; background: #0f0f0f; color: var(--text); border: 1px solid #334155; }
-  .lang-input { width: 5rem; padding: 0.35rem 0.5rem; border-radius: 6px; background: #0f0f0f; color: var(--text); border: 1px solid #334155; font-size: 0.875rem; }
+  select { padding: 0.5rem; border-radius: 6px; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); }
+  .lang-input { width: 5rem; padding: 0.35rem 0.5rem; border-radius: 6px; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); font-size: 0.875rem; }
   label { font-size: 0.875rem; color: var(--muted); display: flex; align-items: center; gap: 0.25rem; }
   button { padding: 0.75rem 2rem; border-radius: 8px; border: none; background: var(--accent); color: white; font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
   button:hover { opacity: 0.85; }
@@ -30,7 +35,7 @@
   #result.md h3 { font-size: 1rem; margin: 0.6rem 0 0.35rem; color: var(--text); }
   #result.md p { margin: 0.35rem 0; }
   #result.md strong { font-weight: 700; }
-  #result.md hr { border: none; border-top: 1px solid #334155; margin: 0.75rem 0; }
+  #result.md hr { border: none; border-top: 1px solid var(--border); margin: 0.75rem 0; }
   #result.md ul { margin: 0.35rem 0 0.35rem 1.5rem; }
   #result.md li { margin: 0.15rem 0; }
   .error { color: var(--err); }
@@ -42,6 +47,8 @@
   .log-error { color: var(--err); }
   #download-row { display: none; margin-top: 0.75rem; gap: 0.5rem; }
   button.cancel { background: var(--err); }
+  .theme-btn { background: none; border: 1px solid var(--border); color: var(--muted); padding: 0.3rem 0.6rem; font-size: 1.1rem; line-height: 1; border-radius: 6px; cursor: pointer; transition: color 0.2s, border-color 0.2s; width: auto; }
+  .theme-btn:hover { color: var(--text); border-color: var(--accent); }
   .spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (max-width: 600px) {
@@ -50,7 +57,7 @@
     .row label { width: 100%; }
     .lang-input { width: 100%; }
     select { width: 100%; }
-    button { width: 100%; }
+    button:not(.theme-btn) { width: 100%; }
     .card { padding: 1rem; }
     h1 { font-size: 1.25rem; }
   }
@@ -58,7 +65,7 @@
 </head>
 <body>
 <div class="container">
-  <h1>&#9733; yttranscript</h1>
+  <h1>&#9733; yttranscript <button id="theme-toggle" class="theme-btn" title="Toggle theme">&#9788;</button></h1>
   <div class="card">
     <input type="text" id="url" placeholder="Paste YouTube URL..." />
     <div class="row">
@@ -84,6 +91,22 @@
 <script>
 let lastResult = null;
 let currentController = null;
+function setTheme(theme) {
+  document.documentElement.className = theme;
+  localStorage.setItem('theme', theme);
+}
+(function initTheme() {
+  const saved = localStorage.getItem('theme');
+  if (saved) {
+    setTheme(saved);
+  } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+    setTheme('light');
+  }
+  document.getElementById('theme-toggle').addEventListener('click', function() {
+    const cur = document.documentElement.className;
+    setTheme(cur === 'light' ? 'dark' : 'light');
+  });
+})();
 function escapeHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
