@@ -317,6 +317,22 @@ function setStatus(text, cls) {
   span.textContent = text;
   status.appendChild(span);
 }
+function notifyDone(title) {
+  if (!("Notification" in window)) return;
+  if (!document.hidden) return;
+  const fire = () => {
+    const n = new Notification("✓ Transcripción lista", {
+      body: title || "yttranscript",
+      icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text x=%228%22 y=%2213%22 font-size=%2214%22 text-anchor=%22middle%22 fill=%22%237c3aed%22>%E2%98%85</text></svg>"
+    });
+    n.onclick = () => { window.focus(); n.close(); };
+  };
+  if (Notification.permission === "granted") {
+    fire();
+  } else if (Notification.permission === "default") {
+    Notification.requestPermission().then(p => { if (p === "granted") fire(); });
+  }
+}
 async function run() {
   const btn = document.getElementById('btn');
   if (currentController) {
@@ -389,6 +405,7 @@ async function run() {
           }
           showStats(data.text);
           dlRow.style.display = 'flex';
+          notifyDone(data.title);
         } else if (data.type === 'error') {
           setStatus(data.message, 'error');
         } else {
