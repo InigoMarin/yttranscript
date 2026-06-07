@@ -91,11 +91,6 @@ def ensure_whisper() -> bool:
     return command_exists("whisper")
 
 
-def _sanitize_filename(title: str) -> str:
-    """Backwards-compatible alias for util.sanitize_filename."""
-    return sanitize_filename(title)
-
-
 def get_video_title(url: str) -> str:
     """Get video title and sanitize for filesystem."""
     result = run(

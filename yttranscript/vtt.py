@@ -143,19 +143,25 @@ def format_video_header(video_info: dict) -> str:
     )
 
 
-def _vtt_to_plain(vtt_path: Path, video_info: Optional[dict] = None, timestamps: bool = False) -> str:
-    """Convert VTT to plain text string, deduplicating lines."""
+def _deduped_cues(vtt_path: Path) -> list[tuple[int, str]]:
+    """Return deduplicated (start_seconds, text) pairs from VTT cues."""
     seen: set[str] = set()
-    lines: list[str] = []
-
+    result: list[tuple[int, str]] = []
     for start, cue_lines in parse_vtt(vtt_path):
         for text in cue_lines:
             if text not in seen:
                 seen.add(text)
-                if timestamps:
-                    lines.append(f"[{_seconds_to_ts(start)}] {text}")
-                else:
-                    lines.append(text)
+                result.append((start, text))
+    return result
+
+
+def _vtt_to_plain(vtt_path: Path, video_info: Optional[dict] = None, timestamps: bool = False) -> str:
+    """Convert VTT to plain text string, deduplicating lines."""
+    cues = _deduped_cues(vtt_path)
+    if timestamps:
+        lines = [f"[{_seconds_to_ts(s)}] {t}" for s, t in cues]
+    else:
+        lines = [t for _, t in cues]
 
     result = ""
     if video_info:
@@ -176,14 +182,7 @@ def vtt_to_stdout(vtt_path: Path, video_info: Optional[dict] = None, timestamps:
 
 def extract_vtt_plain_text(vtt_path: Path) -> str:
     """Extract clean plain text from VTT (for piping to summarizer)."""
-    seen: set[str] = set()
-    lines: list[str] = []
-    for _, cue_lines in parse_vtt(vtt_path):
-        for text in cue_lines:
-            if text and text not in seen:
-                seen.add(text)
-                lines.append(text)
-    return " ".join(lines)
+    return " ".join(t for _, t in _deduped_cues(vtt_path))
 
 
 def _vtt_ts_to_ms(ts: str) -> int:

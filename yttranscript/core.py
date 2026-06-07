@@ -32,20 +32,6 @@ from .ytdlp import (
 )
 
 
-def cleanup_temp_files(video_title: Optional[str] = None, keep_audio: bool = False) -> None:
-    """Remove leftover temp files from old (pre-work_dir) runs in CWD.
-
-    Kept for utility/legacy cleanup. New runs use a private tempdir and don't
-    need this — see process_video(work_dir=...).
-    """
-    cwd = Path.cwd()
-    for f in cwd.glob("transcript_temp*"):
-        f.unlink(missing_ok=True)
-    if video_title and not keep_audio:
-        for f in cwd.glob(f"audio_{video_title}.*"):
-            f.unlink(missing_ok=True)
-
-
 def _render_output(
     vtt_path: Path,
     video_info: dict,
@@ -218,85 +204,79 @@ def process_video(
             # server, and avoids polluting the user's CWD).
             temp_prefix = str(work_path / "transcript_temp")
 
-            try:
-                if not force_whisper:
-                    # List available subs (only in verbose mode)
-                    if log.VERBOSITY >= 2 and not stdout_mode:
-                        info("Available subtitles:")
-                        run(["yt-dlp", "--list-subs", url], check=False)
+            if not force_whisper:
+                # List available subs (only in verbose mode)
+                if log.VERBOSITY >= 2 and not stdout_mode:
+                    info("Available subtitles:")
+                    run(["yt-dlp", "--list-subs", url], check=False)
 
-                    # Strategy: manual (lang variants → fallback) → auto (same) → whisper
-                    lang_variants = get_lang_variants(lang)
-                    if lang.split("-")[0] != fallback_lang:
-                        lang_variants.extend(get_lang_variants(fallback_lang))
-                    downloaded = False
+                # Strategy: manual (lang variants → fallback) → auto (same) → whisper
+                lang_variants = get_lang_variants(lang)
+                if lang.split("-")[0] != fallback_lang:
+                    lang_variants.extend(get_lang_variants(fallback_lang))
+                downloaded = False
 
+                for variant in lang_variants:
+                    info(f"Trying manual subtitles ({variant})...")
+                    if try_download_subtitle(
+                        url, temp_prefix, variant, use_auto=False, work_dir=work_path,
+                    ):
+                        downloaded = True
+                        success("Manual subtitles downloaded!")
+                        break
+
+                if not downloaded:
                     for variant in lang_variants:
-                        info(f"Trying manual subtitles ({variant})...")
+                        info(f"Trying auto-generated subtitles ({variant})...")
                         if try_download_subtitle(
-                            url, temp_prefix, variant, use_auto=False, work_dir=work_path,
+                            url, temp_prefix, variant, use_auto=True, work_dir=work_path,
                         ):
                             downloaded = True
-                            success("Manual subtitles downloaded!")
+                            success("Auto-generated subtitles downloaded!")
                             break
 
-                    if not downloaded:
-                        for variant in lang_variants:
-                            info(f"Trying auto-generated subtitles ({variant})...")
-                            if try_download_subtitle(
-                                url, temp_prefix, variant, use_auto=True, work_dir=work_path,
-                            ):
-                                downloaded = True
-                                success("Auto-generated subtitles downloaded!")
-                                break
+                if downloaded:
+                    vtt_files = list(work_path.glob("transcript_temp*.vtt"))
+                    if vtt_files:
+                        final_vtt = work_path / f"{video_title}.vtt"
+                        vtt_files[0].rename(final_vtt)
+                        _render_output(
+                            final_vtt,
+                            {"title": video_title, "url": url, "duration": video_duration, "whisper": False},
+                            fmt, stdout_mode, timestamps, chunk_size,
+                            summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
+                            output_dir=final_output_dir,
+                        )
+                        return video_title
 
-                    if downloaded:
-                        vtt_files = list(work_path.glob("transcript_temp*.vtt"))
-                        if vtt_files:
-                            final_vtt = work_path / f"{video_title}.vtt"
-                            vtt_files[0].rename(final_vtt)
-                            _render_output(
-                                final_vtt,
-                                {"title": video_title, "url": url, "duration": video_duration, "whisper": False},
-                                fmt, stdout_mode, timestamps, chunk_size,
-                                summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
-                                output_dir=final_output_dir,
-                            )
-                            return video_title
+                warn("No subtitles available.")
+            else:
+                warn("Forcing Whisper transcription (--whisper flag).")
 
-                    warn("No subtitles available.")
-                else:
-                    warn("Forcing Whisper transcription (--whisper flag).")
+            # Last resort: Whisper (reuse video_info to avoid a duplicate yt-dlp call)
+            if not transcribe_with_whisper(
+                url, video_title, model=whisper_model, language=lang,
+                keep_audio=keep_audio, download_dir=whisper_dir,
+                device=whisper_device, quiet=stdout_mode or log.VERBOSITY == 0,
+                video_info=video_info,
+                work_dir=work_path,
+                keep_audio_dir=final_output_dir if keep_audio else None,
+            ):
+                raise TranscriptError(
+                    "Could not get transcript. The video may not have subtitles "
+                    "and transcription was not performed."
+                )
 
-                # Last resort: Whisper (reuse video_info to avoid a duplicate yt-dlp call)
-                if not transcribe_with_whisper(
-                    url, video_title, model=whisper_model, language=lang,
-                    keep_audio=keep_audio, download_dir=whisper_dir,
-                    device=whisper_device, quiet=stdout_mode or log.VERBOSITY == 0,
-                    video_info=video_info,
-                    work_dir=work_path,
-                    keep_audio_dir=final_output_dir if keep_audio else None,
-                ):
-                    raise TranscriptError(
-                        "Could not get transcript. The video may not have subtitles "
-                        "and transcription was not performed."
-                    )
-
-                # Post-process Whisper output
-                vtt_file = work_path / f"{video_title}.vtt"
-                if vtt_file.exists():
-                    _render_output(
-                        vtt_file,
-                        {"title": video_title, "url": url, "duration": video_duration, "whisper": True},
-                        fmt, stdout_mode, timestamps, chunk_size,
-                        summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
-                        output_dir=final_output_dir,
-                    )
-            finally:
-                # No cleanup_temp_files call needed: work_ctx auto-cleans on exit.
-                # Only legacy CWD artifacts (from older versions) would need
-                # cleanup_temp_files; we leave that as an explicit utility.
-                pass
+            # Post-process Whisper output
+            vtt_file = work_path / f"{video_title}.vtt"
+            if vtt_file.exists():
+                _render_output(
+                    vtt_file,
+                    {"title": video_title, "url": url, "duration": video_duration, "whisper": True},
+                    fmt, stdout_mode, timestamps, chunk_size,
+                    summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
+                    output_dir=final_output_dir,
+                )
 
         return video_title
     finally:

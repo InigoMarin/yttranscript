@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from yttranscript.util import TranscriptError
-from yttranscript.core import _render_output, cleanup_temp_files, process_video
+from yttranscript.core import _render_output, process_video
 
 
 # --- process_video URL validation -----------------------------------------
@@ -224,40 +224,6 @@ def test_render_summarize_without_cmd_exits(tmp_path):
             summarize=True, summarize_cmd=None, summarize_prompt=None,
             summarize_timeout=300, keep_vtt=False, output_dir=tmp_path,
         )
-
-
-# --- cleanup_temp_files ---------------------------------------------------
-
-def test_cleanup_removes_transcript_temp(isolated_cwd):
-    f = isolated_cwd / "transcript_temp.en.vtt"
-    f.write_text("x")
-    cleanup_temp_files()
-    assert not f.exists()
-
-
-def test_cleanup_keeps_non_temp_files(isolated_cwd):
-    f = isolated_cwd / "my_transcript.txt"
-    f.write_text("x")
-    cleanup_temp_files()
-    assert f.exists()
-
-
-def test_cleanup_removes_audio(isolated_cwd):
-    audio = isolated_cwd / "audio_myvideo.mp3"
-    audio.write_text("x")
-    cleanup_temp_files(video_title="myvideo", keep_audio=False)
-    assert not audio.exists()
-
-
-def test_cleanup_keeps_audio_when_requested(isolated_cwd):
-    audio = isolated_cwd / "audio_myvideo.mp3"
-    audio.write_text("x")
-    cleanup_temp_files(video_title="myvideo", keep_audio=True)
-    assert audio.exists()
-
-
-def test_cleanup_no_op_on_empty_dir(isolated_cwd):
-    cleanup_temp_files()  # should not raise
 
 
 # ---------------------------------------------------------------------------
