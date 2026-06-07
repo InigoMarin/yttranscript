@@ -25,10 +25,16 @@ def _mock_ffmpeg():
 
 # --- prerequisites --------------------------------------------------------
 
-def test_returns_false_when_no_ffmpeg():
+def test_returns_false_when_no_ffmpeg(capsys):
     with patch("yttranscript.whisper.shutil.which", return_value=None):
         result = transcribe_with_whisper("url", "title")
     assert result is False
+    captured = capsys.readouterr()
+    err_output = captured.err or captured.out
+    assert "ffmpeg" in err_output
+    assert "apt" in err_output
+    assert "brew" in err_output
+    assert "pacman" in err_output
 
 
 def test_returns_false_when_whisper_unavailable():

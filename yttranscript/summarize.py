@@ -60,11 +60,11 @@ def summarize_text(text: str, cmd: str, prompt: str, timeout: int = 300) -> bool
             error(f"Summarize command timed out after {timeout} seconds.")
             return False
         except FileNotFoundError:
-            error(f"Summarize command not found: {cmd_parts[0]}")
+            error(f"Summarize command not found: '{cmd_parts[0]}'. Is it installed and on your PATH?")
             return False
 
         if result.returncode != 0:
-            error("Summarize command failed.")
+            error(f"Summarize command failed (exit code {result.returncode}). Check your --summarize-cmd configuration.")
             return False
 
         raw = Path(tmp_path).read_text()

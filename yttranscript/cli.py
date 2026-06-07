@@ -263,7 +263,8 @@ def transcribe_batch(videos, args) -> None:
             error(f"Failed: {e}")
             failed += 1
         except Exception as e:
-            error(f"Failed: {type(e).__name__}: {e}")
+            msg = str(e) if str(e) else type(e).__name__
+            error(f"Failed: {msg}")
             failed += 1
 
     info(f"Done: {succeeded} transcribed, {failed} failed.")
@@ -353,15 +354,25 @@ def main() -> None:
         warn("Interrupted by user.")
         sys.exit(130)
     except subprocess.TimeoutExpired as e:
-        cmd_str = " ".join(e.cmd) if isinstance(e.cmd, list) else str(e.cmd)
-        error(f"Command timed out after {e.timeout}s: {cmd_str}")
+        error("Operation timed out. This can happen with slow internet or very long videos.")
+        if log.VERBOSITY >= 2:
+            cmd_str = " ".join(e.cmd) if isinstance(e.cmd, list) else str(e.cmd)
+            log.debug(f"Timed out after {e.timeout}s: {cmd_str}")
         sys.exit(1)
     except subprocess.CalledProcessError as e:
-        error(f"Command failed: {' '.join(e.cmd) if isinstance(e.cmd, list) else e.cmd}")
+        error("A required tool failed. Run with --verbose for details.")
+        if log.VERBOSITY >= 2:
+            cmd_str = " ".join(e.cmd) if isinstance(e.cmd, list) else str(e.cmd)
+            log.debug(f"Command failed (exit {e.returncode}): {cmd_str}")
         sys.exit(1)
     except TranscriptError as e:
         error(str(e))
         sys.exit(1)
     except Exception as e:
-        error(f"{type(e).__name__}: {e}")
+        msg = str(e) if str(e) else "An unexpected error occurred."
+        error(msg)
+        if log.VERBOSITY >= 2:
+            log.debug(f"{type(e).__name__}: {e}")
+        else:
+            warn("Run with --verbose for technical details.")
         sys.exit(1)

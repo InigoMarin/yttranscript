@@ -254,7 +254,7 @@ def test_main_keyboard_interrupt_exits_130(monkeypatch):
     assert exc.value.code == 130
 
 
-def test_main_timeout_expired_exits_1(monkeypatch):
+def test_main_timeout_expired_exits_1(monkeypatch, capsys):
     err = subprocess.TimeoutExpired(cmd=["yt-dlp"], timeout=60)
     mock_pv = MagicMock(side_effect=err)
     monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
@@ -264,9 +264,13 @@ def test_main_timeout_expired_exits_1(monkeypatch):
     with pytest.raises(SystemExit) as exc:
         main()
     assert exc.value.code == 1
+    captured = capsys.readouterr()
+    output = captured.err or captured.out
+    assert "timed out" in output.lower()
+    assert "TimeoutExpired" not in output
 
 
-def test_main_called_process_error_exits_1(monkeypatch):
+def test_main_called_process_error_exits_1(monkeypatch, capsys):
     err = subprocess.CalledProcessError(returncode=1, cmd=["yt-dlp"])
     mock_pv = MagicMock(side_effect=err)
     monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
@@ -276,6 +280,26 @@ def test_main_called_process_error_exits_1(monkeypatch):
     with pytest.raises(SystemExit) as exc:
         main()
     assert exc.value.code == 1
+    captured = capsys.readouterr()
+    output = captured.err or captured.out
+    assert "CalledProcessError" not in output
+    assert "--verbose" in output
+
+
+def test_main_generic_exception_no_type_name(monkeypatch, capsys):
+    mock_pv = MagicMock(side_effect=ValueError("something went wrong"))
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
+    monkeypatch.setattr("sys.argv", ["yttranscript", "https://youtube.com/watch?v=x"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    combined = captured.err + captured.out
+    assert "ValueError" not in combined
+    assert "something went wrong" in combined
+    assert "--verbose" in combined
 
 
 def test_main_transcript_error_exits_1(monkeypatch):

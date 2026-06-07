@@ -39,7 +39,15 @@ def transcribe_with_whisper(
     given, the audio file is moved there (typically the user's CWD).
     """
     if not shutil.which("ffmpeg"):
-        error("ffmpeg not found. Install it (e.g. sudo pacman -S ffmpeg).")
+        error(
+            "ffmpeg is required for Whisper transcription but was not found.\n"
+            "Install it with one of:\n"
+            "  Ubuntu/Debian:  sudo apt install ffmpeg\n"
+            "  macOS:          brew install ffmpeg\n"
+            "  Arch Linux:     sudo pacman -S ffmpeg\n"
+            "  Windows:        winget install ffmpeg\n"
+            "  Any system:     pip install imageio-ffmpeg"
+        )
         return False
     info_url = video_info if video_info is not None else get_video_info(url)
     size_mb = info_url["size"] // (1024 * 1024) if info_url["size"] else 0
@@ -53,7 +61,7 @@ def transcribe_with_whisper(
             info(f"{Colors.BOLD}Audio size:{Colors.RESET} ~{size_mb} MB")
 
     if not ensure_whisper():
-        error("Cannot proceed without Whisper.")
+        error("Whisper is required but could not be installed. Try: pip install openai-whisper")
         return False
 
     work_path = work_dir if work_dir is not None else Path(".")
@@ -68,7 +76,7 @@ def transcribe_with_whisper(
         check=False, quiet=quiet, timeout=TIMEOUT_AUDIO_DOWNLOAD,
     )
     if result.returncode != 0:
-        error("Failed to download audio.")
+        error("Failed to download audio. The video may be restricted, private, or region-locked.")
         return False
 
     audio_file = work_path / f"audio_{output_name}.mp3"
@@ -114,7 +122,13 @@ def transcribe_with_whisper(
         result = subprocess.run(whisper_cmd, **whisper_kwargs)
 
     if result.returncode != 0:
-        error("Whisper transcription failed.")
+        error(
+            "Whisper transcription failed. Possible causes:\n"
+            "  - Out of memory (try a smaller --whisper-model, e.g. 'tiny' or 'base')\n"
+            "  - ffmpeg not installed or not on PATH\n"
+            "  - Corrupted audio file\n"
+            "Run with --verbose for detailed error output."
+        )
         return False
 
     # Rename VTT output (inside work_path) to the final name.
