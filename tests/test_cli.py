@@ -323,3 +323,126 @@ def test_config_dir_not_created_for_version(monkeypatch):
     with pytest.raises(SystemExit):
         main()
     mock_ensure.assert_not_called()
+
+
+# --- --latest --transcribe (batch mode) ------------------------------------
+
+VIDEOS = [
+    ("2024-01-15", "vid1", "First Video"),
+    ("2024-01-14", "vid2", "Second Video"),
+    ("2024-01-13", "vid3", "Third Video"),
+]
+
+
+def test_main_latest_without_transcribe_lists_only(monkeypatch):
+    mock_list = MagicMock(return_value=VIDEOS)
+    mock_pv = MagicMock()
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("sys.argv", ["yttranscript", "https://youtube.com/@chan", "--latest", "3"])
+    main()
+    mock_list.assert_called_once()
+    mock_pv.assert_not_called()
+
+
+def test_main_latest_transcribe_processes_all(monkeypatch):
+    mock_list = MagicMock(return_value=VIDEOS)
+    mock_pv = MagicMock()
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/@chan", "--latest", "3", "--transcribe",
+    ])
+    main()
+    assert mock_pv.call_count == 3
+    urls = [c.kwargs["url"] for c in mock_pv.call_args_list]
+    assert urls == [
+        "https://www.youtube.com/watch?v=vid1",
+        "https://www.youtube.com/watch?v=vid2",
+        "https://www.youtube.com/watch?v=vid3",
+    ]
+
+
+def test_main_batch_continues_on_error(monkeypatch):
+    from yttranscript.util import TranscriptError
+    mock_list = MagicMock(return_value=VIDEOS)
+    mock_pv = MagicMock(side_effect=[TranscriptError("fail"), None, None])
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/@chan", "--latest", "3", "--transcribe",
+    ])
+    main()
+    assert mock_pv.call_count == 3
+
+
+def test_main_batch_stdout_rejected(monkeypatch):
+    mock_list = MagicMock(return_value=VIDEOS)
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/@chan", "--latest", "3",
+        "--transcribe", "--stdout",
+    ])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+
+
+def test_main_batch_output_rejected(monkeypatch):
+    mock_list = MagicMock(return_value=VIDEOS)
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/@chan", "--latest", "3",
+        "--transcribe", "--output", "name",
+    ])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+
+
+def test_main_batch_list_subs_rejected(monkeypatch):
+    mock_list = MagicMock(return_value=VIDEOS)
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/@chan", "--latest", "3",
+        "--transcribe", "--list-subs",
+    ])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+
+
+def test_main_transcribe_without_latest_ignored(monkeypatch):
+    mock_pv = MagicMock()
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/watch?v=x", "--transcribe",
+    ])
+    main()
+    mock_pv.assert_called_once()
+    assert mock_pv.call_args.kwargs["url"] == "https://youtube.com/watch?v=x"
+    assert mock_pv.call_args.kwargs["summarize"] is False
+
+
+def test_main_batch_keyboard_interrupt_breaks(monkeypatch):
+    mock_list = MagicMock(return_value=VIDEOS)
+    mock_pv = MagicMock(side_effect=[None, KeyboardInterrupt(), None])
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/@chan", "--latest", "3", "--transcribe",
+    ])
+    main()
+    assert mock_pv.call_count == 2

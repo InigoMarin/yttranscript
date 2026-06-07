@@ -112,8 +112,11 @@ def list_subs(url: str) -> None:
     run(["yt-dlp", "--list-subs", url], check=False, timeout=TIMEOUT_LIST_SUBS)
 
 
-def list_channel_videos(url: str, limit: int = 10) -> None:
-    """List latest videos from a YouTube channel."""
+def resolve_channel_videos(url: str, limit: int = 10) -> list[tuple[str, str, str]]:
+    """Resolve a channel URL and return its latest videos.
+
+    Returns a list of (date_str, video_id, title) tuples.
+    """
     info(f"Resolving channel from: {url}")
     result = run(
         ["yt-dlp", "--print", "%(channel_id)s", "--playlist-items", "1", url],
@@ -140,15 +143,28 @@ def list_channel_videos(url: str, limit: int = 10) -> None:
     if result.returncode != 0 or not result.stdout.strip():
         raise TranscriptError("Could not fetch channel videos.")
 
-    info("")
+    videos: list[tuple[str, str, str]] = []
     for line in result.stdout.strip().splitlines():
         parts = line.split("|", 2)
         if len(parts) < 3:
             continue
         date_raw, vid, title = parts
         date_str = f"{date_raw[:4]}-{date_raw[4:6]}-{date_raw[6:8]}" if len(date_raw) == 8 and date_raw != "NA" else "Unknown"
+        videos.append((date_str, vid, title))
+    return videos
+
+
+def list_channel_videos(url: str, limit: int = 10) -> list[tuple[str, str, str]]:
+    """List latest videos from a YouTube channel.
+
+    Returns the list of (date_str, video_id, title) tuples (also printed).
+    """
+    videos = resolve_channel_videos(url, limit)
+    info("")
+    for date_str, vid, title in videos:
         info(f"Date: {date_str} | Title: {title} | URL: https://www.youtube.com/watch?v={vid}")
     info("")
+    return videos
 
 
 def get_video_info(url: str) -> dict:

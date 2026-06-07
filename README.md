@@ -59,6 +59,12 @@ yttranscript URL --summarize
 yttranscript "https://youtube.com/@channel" --latest
 yttranscript "https://youtube.com/watch?v=..." --latest 5
 
+# Transcribe the latest N videos from a channel (batch mode)
+yttranscript "https://youtube.com/@channel" --latest 5 --transcribe
+
+# Transcribe + summarize the latest 3
+yttranscript "https://youtube.com/@channel" --latest 3 --transcribe --summarize
+
 # Start web UI (browser interface)
 yttranscript --serve
 yttranscript --serve --port 9090
@@ -118,6 +124,7 @@ yttranscript URL --keep-vtt --keep-audio
 | `--serve` | Start local web UI at `http://localhost:PORT` |
 | `--port` | Port for web UI (default: 8080) |
 | `--latest [N]` | List latest N videos from a channel (default: 10) |
+| `--transcribe` | With `--latest`, transcribe all listed videos (batch mode). All other options apply to each video. |
 | `--work-dir` | Directory for intermediate files (subtitle/audio/VTT). Default: private tempdir. |
 | `--output-dir` | Directory where the final transcript is saved. Default: current directory. |
 | `-V, --version` | Show version |

@@ -19,6 +19,7 @@ from yttranscript.ytdlp import (
     get_video_title,
     list_channel_videos,
     list_subs,
+    resolve_channel_videos,
     try_download_subtitle,
 )
 
@@ -354,10 +355,12 @@ def test_list_channel_videos_success(capsys):
     videos_raw = "20240115|vid1|First Video\n20240114|vid2|Second Video\n"
     responses = iter([_cp(0, channel_raw), _cp(0, videos_raw)])
     with patch("yttranscript.ytdlp.run", side_effect=lambda *a, **kw: next(responses)):
-        list_channel_videos("https://youtube.com/@chan", limit=2)
+        result = list_channel_videos("https://youtube.com/@chan", limit=2)
         captured = capsys.readouterr()
         assert "UC12345678" in captured.out
         assert "First Video" in captured.out
+    assert result == [("2024-01-15", "vid1", "First Video"),
+                      ("2024-01-14", "vid2", "Second Video")]
 
 
 def test_list_channel_videos_invalid_id_exits():
@@ -370,3 +373,50 @@ def test_list_channel_videos_resolve_failure_exits():
     with patch("yttranscript.ytdlp.run", return_value=_cp(1, "")):
         with pytest.raises(TranscriptError):
             list_channel_videos("u")
+
+
+# --- resolve_channel_videos ------------------------------------------------
+
+def test_resolve_channel_videos_success():
+    channel_raw = "UC12345678\n"
+    videos_raw = "20240115|vid1|First Video\n20240114|vid2|Second Video\n"
+    responses = iter([_cp(0, channel_raw), _cp(0, videos_raw)])
+    with patch("yttranscript.ytdlp.run", side_effect=lambda *a, **kw: next(responses)):
+        videos = resolve_channel_videos("https://youtube.com/@chan", limit=2)
+    assert videos == [("2024-01-15", "vid1", "First Video"),
+                      ("2024-01-14", "vid2", "Second Video")]
+
+
+def test_resolve_channel_videos_invalid_id_exits():
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "NOTUC\n")):
+        with pytest.raises(TranscriptError):
+            resolve_channel_videos("u")
+
+
+def test_resolve_channel_videos_resolve_failure_exits():
+    with patch("yttranscript.ytdlp.run", return_value=_cp(1, "")):
+        with pytest.raises(TranscriptError):
+            resolve_channel_videos("u")
+
+
+def test_resolve_channel_videos_fetch_failure_exits():
+    responses = iter([_cp(0, "UC12345678\n"), _cp(1, "")])
+    with patch("yttranscript.ytdlp.run", side_effect=lambda *a, **kw: next(responses)):
+        with pytest.raises(TranscriptError):
+            resolve_channel_videos("u")
+
+
+def test_resolve_channel_videos_skips_malformed_lines():
+    channel_raw = "UC12345678\n"
+    videos_raw = "badline\n20240115|vid1|First Video\n"
+    responses = iter([_cp(0, channel_raw), _cp(0, videos_raw)])
+    with patch("yttranscript.ytdlp.run", side_effect=lambda *a, **kw: next(responses)):
+        videos = resolve_channel_videos("u")
+    assert videos == [("2024-01-15", "vid1", "First Video")]
+
+
+def test_resolve_channel_videos_empty_fetch_exits():
+    responses = iter([_cp(0, "UC12345678\n"), _cp(0, "\n")])
+    with patch("yttranscript.ytdlp.run", side_effect=lambda *a, **kw: next(responses)):
+        with pytest.raises(TranscriptError):
+            resolve_channel_videos("u")

@@ -8,7 +8,7 @@ import sys
 
 from . import log
 from ._version import __version__
-from .log import warn, error, Colors
+from .log import info, warn, error, Colors
 from .config import (
     CONFIG_PATH, DEFAULTS, load_config, resolve_value, ensure_config_dir, hidden_keys,
 )
@@ -162,6 +162,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="List latest N videos from a channel (default: 10). Accepts channel or video URLs.",
     )
     parser.add_argument(
+        "--transcribe",
+        action="store_true",
+        help="With --latest, transcribe all listed videos (batch mode). "
+             "All other options (--lang, --format, --summarize, ...) apply to each video.",
+    )
+    parser.add_argument(
         "--work-dir",
         default=None,
         help="Directory for intermediate files (subtitle/audio/VTT). Default: private tempdir.",
@@ -202,6 +208,66 @@ def _validate_args(parser: argparse.ArgumentParser, args) -> None:
         parser.error(f"--latest must be >= 1, got {args.latest}")
 
 
+def transcribe_batch(videos, args) -> None:
+    """Transcribe a batch of videos listed by --latest --transcribe."""
+    config = load_config()
+    lang = resolve_value(args.lang, config, "lang")
+    fmt = resolve_value(args.format, config, "format")
+    timestamps = resolve_value(args.timestamps, config, "timestamps") or False
+    chunk_size = resolve_value(args.chunk_size, config, "chunk_size")
+    summarize_cmd = resolve_value(args.summarize_cmd, config, "summarize_cmd")
+    summarize_prompt = resolve_value(args.summarize_prompt, config, "summarize_prompt")
+    summarize_timeout = resolve_value(None, config, "summarize_timeout")
+    fallback_lang = resolve_value(None, config, "fallback_lang")
+    whisper_model = resolve_value(args.whisper_model, config, "whisper_model")
+    whisper_dir = resolve_value(args.whisper_dir, config, "whisper_dir")
+    whisper_device = resolve_value(args.whisper_device, config, "whisper_device")
+
+    total = len(videos)
+    succeeded = 0
+    failed = 0
+
+    for i, (_date_str, video_id, title) in enumerate(videos, 1):
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
+        info(f"[{i}/{total}] Transcribing: {title!r}")
+        try:
+            process_video(
+                url=video_url,
+                output=None,
+                fmt=fmt,
+                lang=lang,
+                list_only=False,
+                force_whisper=args.whisper,
+                whisper_model=whisper_model,
+                whisper_dir=whisper_dir,
+                whisper_device=whisper_device,
+                keep_vtt=args.keep_vtt,
+                keep_audio=args.keep_audio,
+                stdout_mode=False,
+                timestamps=timestamps,
+                chunk_size=chunk_size,
+                summarize=args.summarize,
+                summarize_cmd=summarize_cmd,
+                summarize_prompt=summarize_prompt,
+                summarize_timeout=summarize_timeout,
+                fallback_lang=fallback_lang,
+                work_dir=args.work_dir,
+                output_dir=args.output_dir,
+            )
+            succeeded += 1
+        except KeyboardInterrupt:
+            warn("Batch interrupted by user.")
+            break
+        except TranscriptError as e:
+            error(f"Failed: {e}")
+            failed += 1
+        except Exception as e:
+            error(f"Failed: {type(e).__name__}: {e}")
+            failed += 1
+
+    info(f"Done: {succeeded} transcribed, {failed} failed.")
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -231,7 +297,16 @@ def main() -> None:
         parser.error(f"not a YouTube URL: {args.url!r}")
 
     if args.latest is not None:
-        list_channel_videos(args.url, args.latest)
+        videos = list_channel_videos(args.url, args.latest)
+        if not args.transcribe:
+            return
+        if args.stdout:
+            parser.error("--stdout cannot be used with --latest --transcribe")
+        if args.output:
+            parser.error("--output cannot be used with --latest --transcribe (each video uses its own title)")
+        if args.list_subs:
+            parser.error("--list-subs cannot be used with --latest --transcribe")
+        transcribe_batch(videos, args)
         return
 
     config = load_config()
