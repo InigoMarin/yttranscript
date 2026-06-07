@@ -29,6 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  yttranscript URL --whisper --whisper-model small\n"
             "  yttranscript URL --list-subs\n"
             "  yttranscript URL --latest 5\n"
+            "  yttranscript URL --latest 5 --transcribe\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

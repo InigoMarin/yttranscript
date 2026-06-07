@@ -4,7 +4,7 @@ pkgver=2.0.0
 pkgrel=1
 pkgdesc="Download YouTube video transcripts with Whisper fallback"
 arch=('any')
-url="https://github.com/ima/yttranscript"
+url="https://github.com/InigoMarin/yttranscript"
 license=('MIT')
 depends=('python>=3.9' 'yt-dlp' 'ffmpeg')
 makedepends=('python-build' 'python-installer' 'python-setuptools')

@@ -268,10 +268,10 @@ Features:
 
 ## Dependencies
 
-- **yt-dlp** — installed automatically if missing
-- **openai-whisper** — only needed for Whisper fallback, prompted before install
+- **yt-dlp** — declared as a pip dependency (installed with `pip install .`); if missing at runtime, auto-installed via pip with brew/apt fallback
+- **openai-whisper** — only needed for Whisper fallback, prompted before install (install upfront with `pip install ".[whisper]"`)
 - **ffmpeg** — required by Whisper for audio processing
-- **script** (BSD/Linux `util-linux`) — required by `--summarize` to capture command output via pseudo-terminal
+- **script** (BSD/Linux `util-linux`) — required by `--summarize` to capture command output via pseudo-terminal (not available on Windows)
 
 ## How It Works
 

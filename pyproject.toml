@@ -42,7 +42,7 @@ dev = [
 yttranscript = "yttranscript:main"
 
 [project.urls]
-Homepage = "https://github.com/ima/yttranscript"
+Homepage = "https://github.com/InigoMarin/yttranscript"
 
 [tool.setuptools.packages.find]
 include = ["yttranscript*"]
