@@ -46,10 +46,11 @@
   .hint.warn { color: #fbbf24; }
   button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
   button.secondary:hover { border-color: var(--accent); }
-  .meta-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 0.75rem; font-size: 0.75rem; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 0.75rem; font-size: 0.75rem; align-items: flex-start; }
   .meta-chip { background: var(--input-bg); padding: 0.2rem 0.6rem; border-radius: 4px; border: 1px solid var(--border); }
   .meta-chip b { color: var(--muted); font-weight: 600; margin-right: 0.3em; }
   .meta-chip a { color: var(--accent); text-decoration: underline; word-break: break-all; }
+  .meta-thumb { width: 120px; height: 90px; border-radius: 6px; object-fit: cover; flex-shrink: 0; border: 1px solid var(--border); }
   #output-card .stats { margin: 0.5rem 0; }
   #status a { color: var(--ok); text-decoration: underline; }
   #status a:hover { opacity: 0.8; }
@@ -259,6 +260,16 @@ function renderMarkdown(text) {
     const nonEmpty = lines.filter(l => l.trim());
     const metaMatches = nonEmpty.map(l => l.match(metaRe)).filter(Boolean);
     if (metaMatches.length === nonEmpty.length && metaMatches.length > 0) {
+      let thumbHtml = '';
+      for (const m of metaMatches) {
+        if (m[1] === 'URL') {
+          const vid = m[2].match(/(?:watch\?v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
+          if (vid) {
+            thumbHtml = '<img class="meta-thumb" src="https://i.ytimg.com/vi/' + vid[1] + '/hqdefault.jpg" alt="Video thumbnail" onerror="this.style.display=\'none\'">';
+          }
+          break;
+        }
+      }
       const chips = metaMatches.map(m => {
         const label = m[1];
         let val = m[2];
@@ -267,7 +278,7 @@ function renderMarkdown(text) {
         }
         return '<span class="meta-chip"><b>' + label + ':</b> ' + val + '</span>';
       });
-      html.push('<div class="meta-row">' + chips.join('') + '</div>');
+      html.push('<div class="meta-row">' + thumbHtml + chips.join('') + '</div>');
       continue;
     }
     const joined = lines.map(l => l.endsWith('  ') ? l.slice(0,-2) + '<br>' : l).join(' ');
@@ -356,12 +367,17 @@ function flashTabTitle(title) {
   window.addEventListener('focus', restore);
   _titleTimer = setTimeout(restore, 15000);
 }
-function notifyDone(title) {
+function notifyDone(title, videoUrl) {
   flashTabTitle(title);
   if (!("Notification" in window) || Notification.permission !== "granted") return;
+  let icon = "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text x=%228%22 y=%2213%22 font-size=%2214%22 text-anchor=%22middle%22 fill=%22%237c3aed%22>%E2%98%85</text></svg>";
+  if (videoUrl) {
+    const vid = videoUrl.match(/(?:watch\?v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
+    if (vid) icon = "https://i.ytimg.com/vi/" + vid[1] + "/hqdefault.jpg";
+  }
   const n = new Notification("\u2713 Transcripci\u00f3n lista", {
     body: title || "yttranscript",
-    icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text x=%228%22 y=%2213%22 font-size=%2214%22 text-anchor=%22middle%22 fill=%22%237c3aed%22>%E2%98%85</text></svg>"
+    icon: icon
   });
   n.onclick = () => { window.focus(); n.close(); };
 }
@@ -437,7 +453,7 @@ async function run() {
           }
           showStats(data.text);
           dlRow.style.display = 'flex';
-          notifyDone(data.title);
+          notifyDone(data.title, url);
         } else if (data.type === 'error') {
           setStatus(data.message, 'error');
         } else {
