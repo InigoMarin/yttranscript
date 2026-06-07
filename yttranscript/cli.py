@@ -250,7 +250,7 @@ def transcribe_batch(videos, args) -> None:
                 whisper_device=whisper_device,
                 keep_vtt=args.keep_vtt,
                 keep_audio=args.keep_audio,
-                stdout_mode=False,
+                stdout_mode=args.stdout,
                 timestamps=timestamps,
                 chunk_size=chunk_size,
                 summarize=args.summarize,
@@ -308,8 +308,6 @@ def main() -> None:
         videos = list_channel_videos(args.url, args.latest)
         if not args.transcribe:
             return
-        if args.stdout:
-            parser.error("--stdout cannot be used with --latest --transcribe")
         if args.output:
             parser.error("--output cannot be used with --latest --transcribe (each video uses its own title)")
         if args.list_subs:
