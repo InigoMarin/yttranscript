@@ -49,8 +49,8 @@ _CONFIG_HIDDEN = {"output", "port"}
 # truth: DEFAULTS). Only override where a more illustrative example helps.
 _CONFIG_EXAMPLES = {
     "lang": "es",
-    "summarize_cmd": "llama-cli -m ~/models/gemma-4-E2B-it-NVFP4.gguf -ngl 99 -fa 1 -ub 1024 -b 1024 --single-turn",
-    "summarize_prompt": "Resume el video en castellano. Formatealo para que sea facil de leer y respete la normativa de markdown",
+    "summarize_cmd": "llama-cli -m ~/models/Llama-3.1-8B-Instruct-Q4_K_M.gguf -ngl 99 -fa 1 -ub 1024 -b 1024 --single-turn",
+    "summarize_prompt": "Summarize this video in bullet points. Format for readability using markdown.",
     "whisper_dir": "/home/user/.cache/whisper",
 }
 

@@ -8,7 +8,13 @@ Falls back to OpenAI Whisper transcription when no subtitles are available.
 ### pip (any system)
 
 ```bash
-pip install -e .
+pip install .
+```
+
+With Whisper support pre-declared:
+
+```bash
+pip install ".[whisper]"
 ```
 
 ### Arch Linux
@@ -20,10 +26,17 @@ sudo pacman -U yttranscript-*.pkg.tar.zst
 
 This installs the `yttranscript` command system-wide. Uninstall with `pacman -R yttranscript`.
 
+### Development
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
 ## Usage
 
 ```bash
-# Basic - auto-detect language, download transcript as plain text
+# Basic — auto-detect language, download transcript as plain text
 yttranscript "https://www.youtube.com/watch?v=VIDEO_ID"
 
 # Force specific language
@@ -35,13 +48,12 @@ yttranscript URL --format vtt
 # Include [MM:SS] timestamps in text output
 yttranscript URL --timestamps
 
-# JSON array output for RAG / vector DB ingestion
+# JSON output for RAG / vector DB ingestion
 yttranscript URL --format json
 yttranscript URL --format json --chunk-size 60 --stdout | python ingest.py
 
 # Summarize with AI (pipes transcript to external command)
 yttranscript URL --summarize
-yttranscript URL --summarize --summarize-cmd "llama-cli -m ~/models/gemma-4-E2B-it-NVFP4.gguf -ngl 99 --single-turn"
 
 # List latest videos from a channel
 yttranscript "https://youtube.com/@channel" --latest
@@ -51,8 +63,9 @@ yttranscript "https://youtube.com/watch?v=..." --latest 5
 yttranscript --serve
 yttranscript --serve --port 9090
 
-# Custom output filename
+# Custom output filename or directory
 yttranscript URL -o my_transcript
+yttranscript URL --output-dir ~/transcripts/
 
 # List available subtitles
 yttranscript URL --list-subs
@@ -87,7 +100,7 @@ yttranscript URL --keep-vtt --keep-audio
 | `-f, --format` | `txt` (default), `vtt`, or `json` (chunked for RAG) |
 | `--timestamps` | Include `[MM:SS]` timestamps in text output (config: `timestamps`) |
 | `--chunk-size` | Seconds per chunk for JSON output (default: 30, config: `chunk_size`) |
-| `--lang` | Subtitle language code (default: auto-detect) |
+| `--lang` | Subtitle language code (default: auto-detect, config: `lang`) |
 | `--list-subs` | List available subtitles and exit |
 | `--whisper` | Force Whisper transcription (skip subtitle download) |
 | `--whisper-model` | Whisper model: `tiny`, `base` (default), `small`, `medium`, `large` |
@@ -104,7 +117,7 @@ yttranscript URL --keep-vtt --keep-audio
 | `--summarize-prompt` | Prompt prepended to transcript (config: `summarize_prompt`) |
 | `--serve` | Start local web UI at `http://localhost:PORT` |
 | `--port` | Port for web UI (default: 8080) |
-| `--latest [N]` | List latest N videos from a channel (default: 10). Accepts channel or video URLs. |
+| `--latest [N]` | List latest N videos from a channel (default: 10) |
 | `--work-dir` | Directory for intermediate files (subtitle/audio/VTT). Default: private tempdir. |
 | `--output-dir` | Directory where the final transcript is saved. Default: current directory. |
 | `-V, --version` | Show version |
@@ -121,21 +134,24 @@ yttranscript URL --keep-vtt --keep-audio
 
 ## Configuration
 
-On first run, `yttranscript` creates a config file at `~/.config/yttranscript/config.toml`:
+On first run, `yttranscript` creates a config file. Location follows the XDG Base
+Directory spec: `$XDG_CONFIG_HOME/yttranscript/config.toml` (defaults to
+`~/.config/yttranscript/config.toml`):
 
 ```toml
-# Uncomment and edit to set your defaults
-# CLI flags always override these values
+# yttranscript configuration
+# Uncomment and edit the lines below to set your defaults.
+# CLI flags always override these values.
 
 # lang = "es"
 # format = "txt"
 # timestamps = false
 # chunk_size = 30
-# summarize_cmd = "llama-cli -m ~/models/gemma-4-E2B-it-NVFP4.gguf -ngl 99 -fa 1 -ub 1024 -b 1024 --single-turn"
-# summarize_prompt = "Resume el video en castellano. Formatealo para que sea facil de leer y respete la normativa de markdown"
+# summarize_cmd = "llama-cli -m ~/models/Llama-3.1-8B-Instruct-Q4_K_M.gguf -ngl 99 -fa 1 -ub 1024 -b 1024 --single-turn"
+# summarize_prompt = "Summarize this video in bullet points. Format for readability using markdown."
 # summarize_timeout = 300
 # fallback_lang = "en"
-# whisper_model = "medium"
+# whisper_model = "base"
 # whisper_device = "gpu"
 # whisper_dir = "/home/user/.cache/whisper"
 ```
@@ -146,6 +162,71 @@ Check your current config:
 
 ```bash
 yttranscript --show-config
+```
+
+## Summarization with AI
+
+```bash
+# Configure once in ~/.config/yttranscript/config.toml:
+#   summarize_cmd = "llama-cli -m ~/models/Llama-3.1-8B-Instruct-Q4_K_M.gguf -ngl 99 -fa 1 -ub 1024 -b 1024 --single-turn"
+#   summarize_prompt = "Summarize this video in bullet points. Format for readability using markdown."
+
+# Then just:
+yttranscript URL --summarize
+
+# Or specify inline:
+yttranscript URL --summarize \
+  --summarize-cmd "llama-cli -m ~/models/Llama-3.1-8B-Instruct-Q4_K_M.gguf -ngl 99 --single-turn" \
+  --summarize-prompt "Summarize in 5 bullet points"
+```
+
+How it works: yttranscript downloads the transcript, extracts plain text, and sends it to `summarize_cmd` with `summarize_prompt` prepended. Output is captured via a pseudo-terminal (`script(1)`) and cleaned (banner, stats, thinking blocks removed). The timeout is configurable via `summarize_timeout` in the config. Currently optimized for llama.cpp's `llama-cli`; other tools may work but output parsing is tailored to llama-cli's format.
+
+## JSON Output
+
+```bash
+yttranscript URL --format json --stdout
+yttranscript URL --format json -o my_transcript
+```
+
+Output structure:
+
+```json
+{
+  "title": "Video Title",
+  "url": "https://youtube.com/watch?v=...",
+  "duration": 1800,
+  "source": "subtitles",
+  "chunk_size": 30,
+  "chunks": [
+    {
+      "start": "00:00",
+      "end": "00:30",
+      "start_seconds": 0,
+      "end_seconds": 30,
+      "text": "Welcome to this presentation..."
+    }
+  ]
+}
+```
+
+Ingest with Python:
+
+```python
+import json, sys
+
+data = json.load(sys.stdin)
+for chunk in data["chunks"]:
+    doc = {
+        "text": chunk["text"],
+        "metadata": {
+            "title": data["title"],
+            "url": data["url"],
+            "start": chunk["start"],
+            "deep_link": f"{data['url']}&t={chunk['start_seconds']}",
+        },
+    }
+    vector_db.add(doc)
 ```
 
 ## Web UI
@@ -169,12 +250,21 @@ Features:
 - DNS-rebinding protection (`Host` header must be `localhost` / `127.0.0.1`)
 - Concurrency limit (max 2 simultaneous transcriptions to prevent resource exhaustion)
 
+## Environment Variables
+
+| Variable | Effect |
+|---|---|
+| `XDG_CONFIG_HOME` | Override config directory (default: `~/.config`) |
+| `NO_COLOR` | Disable ANSI color output (https://no-color.org) |
+| `CLICOLOR` | Set to `0` to disable color |
+| `CLICOLOR_FORCE` | Set to `1` to force color even when piped |
+
 ## Dependencies
 
-- **yt-dlp** - installed automatically if missing
-- **openai-whisper** - only needed for Whisper fallback, prompted before install
-- **ffmpeg** - required by Whisper for audio processing
-- **script** (BSD/Linux `util-linux`) - required by `--summarize` to capture command output via pseudo-terminal
+- **yt-dlp** — installed automatically if missing
+- **openai-whisper** — only needed for Whisper fallback, prompted before install
+- **ffmpeg** — required by Whisper for audio processing
+- **script** (BSD/Linux `util-linux`) — required by `--summarize` to capture command output via pseudo-terminal
 
 ## How It Works
 
@@ -184,6 +274,10 @@ Features:
 4. Last resort: download audio + transcribe with Whisper (GPU with CPU fallback)
 5. Convert VTT to clean text with Markdown header (title, URL, duration, source)
 
+Intermediate files (subtitles, audio) are written to a private temp directory by
+default (`--work-dir` to override). The final transcript is saved to the current
+directory (`--output-dir` to override).
+
 ## Examples
 
 ```bash
@@ -191,7 +285,7 @@ Features:
 yttranscript "https://youtube.com/watch?v=dQw4w9WgXcQ"
 
 # Spanish webinar, VTT format
-yttranscript "https://youtube.com/watch?v=FWAXGxsvLxM" --format vtt
+yttranscript "https://youtube.com/watch?v=VIDEO_ID" --lang es --format vtt
 
 # Spanish video with timestamps for navigation
 yttranscript "https://youtube.com/watch?v=VIDEO_ID" --lang es --timestamps
@@ -204,67 +298,4 @@ yttranscript URL --stdout | grep -i "webhook"
 
 # Copy transcript to clipboard without saving
 yttranscript URL --stdout | wl-copy
-```
-
-## Summarization with AI
-
-```bash
-# Configure once in ~/.config/yttranscript/config.toml:
-#   summarize_cmd = "llama-cli -m ~/models/gemma-4-E2B-it-NVFP4.gguf -ngl 99 -fa 1 -ub 1024 -b 1024 --single-turn"
-#   summarize_prompt = "Resume el video en castellano. Formatealo para que sea facil de leer y respete la normativa de markdown"
-
-# Then just:
-yttranscript URL --summarize
-
-# Or specify inline:
-yttranscript URL --summarize \
-  --summarize-cmd "llama-cli -m ~/models/gemma-4-E2B-it-NVFP4.gguf -ngl 99 --single-turn" \
-  --summarize-prompt "Resume en 5 bullets"
-```
-
-How it works: yttranscript downloads the transcript, extracts plain text, and sends it to `summarize_cmd` with `summarize_prompt` prepended. Output is captured via a pseudo-terminal (`script(1)`) and cleaned (banner, stats, thinking blocks removed). The timeout is configurable via `summarize_timeout` in the config. Currently optimized for llama.cpp's `llama-cli`; other tools may work but output parsing is tailored to llama-cli's format.
-
-```bash
-yttranscript URL --format json --stdout
-yttranscript URL --format json -o my_transcript
-```
-
-Output structure:
-
-```json
-{
-  "title": "Video Title",
-  "url": "https://youtube.com/watch?v=...",
-  "duration": 1800,
-  "source": "subtitles",
-  "chunk_size": 30,
-  "chunks": [
-    {
-      "start": "00:00",
-      "end": "00:30",
-      "start_seconds": 0,
-      "end_seconds": 30,
-      "text": "Bienvenidos a esta presentacion..."
-    }
-  ]
-}
-```
-
-Ingest with Python:
-
-```python
-import json, sys
-
-data = json.load(sys.stdin)
-for chunk in data["chunks"]:
-    doc = {
-        "text": chunk["text"],
-        "metadata": {
-            "title": data["title"],
-            "url": data["url"],
-            "start": chunk["start"],
-            "deep_link": f"{data['url']}&t={chunk['start_seconds']}",
-        },
-    }
-    vector_db.add(doc)
 ```
