@@ -50,7 +50,13 @@
   .meta-chip { background: var(--input-bg); padding: 0.2rem 0.6rem; border-radius: 4px; border: 1px solid var(--border); }
   .meta-chip b { color: var(--muted); font-weight: 600; margin-right: 0.3em; }
   .meta-chip a { color: var(--accent); text-decoration: underline; word-break: break-all; }
-  .meta-thumb { width: 120px; height: 90px; border-radius: 6px; object-fit: cover; flex-shrink: 0; border: 1px solid var(--border); }
+  .video-card { display: flex; gap: 1rem; margin-bottom: 0.75rem; align-items: flex-start; }
+  .video-card-thumb { flex-shrink: 0; }
+  .video-card-thumb img { width: 160px; height: 90px; border-radius: 6px; object-fit: cover; border: 1px solid var(--border); cursor: pointer; }
+  .video-card-thumb img:hover { opacity: 0.9; }
+  .video-card-info { flex: 1; min-width: 0; }
+  .video-card-info h1 { font-size: 1.1rem; margin: 0 0 0.5rem; color: var(--accent); }
+  .video-card-info .meta-row { margin: 0; }
   #output-card .stats { margin: 0.5rem 0; }
   #status a { color: var(--ok); text-decoration: underline; }
   #status a:hover { opacity: 0.8; }
@@ -75,7 +81,7 @@
   @media print {
     body { background: #fff !important; color: #000 !important; padding: 0 !important; }
     .card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
-    #theme-toggle, #log, #download-row, #log-toggle, #running-hint, #summarize-hint, .stats, .meta-row, button { display: none !important; }
+    #theme-toggle, #log, #download-row, #log-toggle, #running-hint, #summarize-hint, .stats, .meta-row, .video-card, button { display: none !important; }
     #result { max-height: none !important; overflow: visible !important; }
     a { color: #000 !important; text-decoration: underline; }
   }
@@ -86,6 +92,8 @@
     .lang-input { width: 100%; }
     select { width: 100%; }
     button:not(.theme-btn):not(.secondary) { width: 100%; }
+    .video-card { flex-direction: column; }
+    .video-card-thumb img { width: 100%; height: auto; }
     .card { padding: 1rem; }
     h1 { font-size: 1.25rem; }
   }
@@ -265,12 +273,18 @@ function renderMarkdown(text) {
         if (m[1] === 'URL') {
           const vid = m[2].match(/(?:watch\?v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
           if (vid) {
-            thumbHtml = '<img class="meta-thumb" src="https://i.ytimg.com/vi/' + vid[1] + '/hqdefault.jpg" alt="Video thumbnail" onerror="this.style.display=\'none\'">';
+            thumbHtml = '<a href="' + m[2] + '" target="_blank" rel="noopener noreferrer">' +
+              '<img src="https://i.ytimg.com/vi/' + vid[1] + '/mqdefault.jpg" alt="Video thumbnail" onerror="this.parentElement.style.display=\'none\'">' +
+              '</a>';
           }
           break;
         }
       }
-      const chips = metaMatches.map(m => {
+      let titleHtml = '';
+      if (html.length > 0 && /^<h[1-3]>/.test(html[html.length - 1])) {
+        titleHtml = html.pop();
+      }
+      const chips = metaMatches.filter(m => m[1] !== 'URL').map(m => {
         const label = m[1];
         let val = m[2];
         if (/^https?:\/\//.test(val)) {
@@ -278,7 +292,15 @@ function renderMarkdown(text) {
         }
         return '<span class="meta-chip"><b>' + label + ':</b> ' + val + '</span>';
       });
-      html.push('<div class="meta-row">' + thumbHtml + chips.join('') + '</div>');
+      if (thumbHtml) {
+        html.push('<div class="video-card">' +
+          '<div class="video-card-thumb">' + thumbHtml + '</div>' +
+          '<div class="video-card-info">' + titleHtml +
+          '<div class="meta-row">' + chips.join('') + '</div></div></div>');
+      } else {
+        if (titleHtml) html.push(titleHtml);
+        html.push('<div class="meta-row">' + chips.join('') + '</div>');
+      }
       continue;
     }
     const joined = lines.map(l => l.endsWith('  ') ? l.slice(0,-2) + '<br>' : l).join(' ');
