@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>yttranscript</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text x=%228%22 y=%2213%22 font-size=%2214%22 text-anchor=%22middle%22 fill=%22%237c3aed%22>%E2%98%85</text></svg>">
 <style>
   :root { --bg: #0f0f0f; --surface: #1a1a2e; --accent: #7c3aed; --text: #e2e8f0; --muted: #94a3b8; --ok: #22c55e; --err: #ef4444; --border: #334155; --input-bg: #0f0f0f; }
   @media (prefers-color-scheme: light) {
@@ -43,6 +44,12 @@
   input[type="text"].invalid { border-color: var(--err); }
   .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.5rem; }
   .hint.warn { color: var(--err); }
+  #status a { color: var(--ok); text-decoration: underline; }
+  #status a:hover { opacity: 0.8; }
+  .stats { display: none; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; font-size: 0.7rem; color: var(--muted); }
+  .stats span { background: var(--input-bg); padding: 0.15rem 0.5rem; border-radius: 4px; border: 1px solid var(--border); }
+  #result.md em { font-style: italic; }
+  #result.md code { font-family: monospace; background: var(--input-bg); padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.9em; border: 1px solid var(--border); }
   #log { max-height: 180px; overflow-y: auto; margin-top: 0.75rem; font-size: 0.8rem; font-family: monospace; display: none; }
   .log-info { color: var(--muted); }
   .log-success { color: var(--ok); }
@@ -54,6 +61,14 @@
   .theme-btn:hover { color: var(--text); border-color: var(--accent); }
   .spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media print {
+    body { background: #fff !important; color: #000 !important; padding: 0 !important; }
+    .card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
+    #theme-toggle, #log, #download-row, #log-toggle, #running-hint, #summarize-hint, .stats, button { display: none !important; }
+    #result { max-height: none !important; overflow: visible !important; }
+    a { color: #000 !important; text-decoration: underline; }
+  }
   @media (max-width: 600px) {
     body { padding: 1rem; }
     .row { flex-direction: column; align-items: stretch; }
@@ -83,16 +98,22 @@
       <label>Format <select id="format"><option value="txt">txt</option><option value="json">json</option><option value="vtt">vtt</option><option value="srt">srt</option></select></label>
       <label><input type="checkbox" id="timestamps"> Timestamps</label>
       <label><input type="checkbox" id="summarize"> Summarize</label>
+      <label>Save as <input type="text" id="filename" placeholder="(auto)" class="lang-input" style="width:9rem;"></label>
     </div>
     <div class="row">
       <button id="btn" onclick="run()">Transcribe</button>
       <div id="download-row">
         <button onclick="copyText()" id="copy-btn">Copy</button>
         <button onclick="downloadFile()" id="dl-btn">Download</button>
+        <button onclick="run()" id="rerun-btn">Re-run</button>
       </div>
     </div>
     <div id="summarize-hint" class="hint warn" style="display:none;">Requires <code>summarize_cmd</code> to be set in config to actually summarize.</div>
+    <div id="lang-badge" class="hint" style="display:none;">🌐 Language: <span id="lang-badge-text"></span></div>
+    <div id="running-hint" class="hint" style="display:none;">⏳ Still working — Whisper can take several minutes for long videos.</div>
     <div id="status"></div>
+    <div class="stats"><span id="stats-words"></span><span id="stats-chars"></span><span id="stats-read"></span></div>
+    <button id="log-toggle" class="theme-btn" style="display:none;" onclick="toggleLog()">▼ Logs</button>
     <div id="log"></div>
   </div>
   <div class="card" id="output-card" style="display:none;">
@@ -112,9 +133,14 @@ function setTheme(theme) {
   document.documentElement.classList.toggle('light', theme === 'light');
   document.documentElement.classList.toggle('dark', theme === 'dark');
   safeSet('theme', theme);
+  updateThemeIcon();
 }
 function currentTheme() {
   return document.documentElement.classList.contains('light') ? 'light' : 'dark';
+}
+function updateThemeIcon() {
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = currentTheme() === 'light' ? '🌙' : '☀';
 }
 (function initTheme() {
   const saved = safeGet('theme');
@@ -123,6 +149,7 @@ function currentTheme() {
   } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
     setTheme('light');
   }
+  updateThemeIcon();
   document.getElementById('theme-toggle').addEventListener('click', function() {
     setTheme(currentTheme() === 'light' ? 'dark' : 'light');
   });
@@ -176,7 +203,10 @@ function escapeHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 function inlineMd(s) {
-  return s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  return s;
 }
 function renderMarkdown(text) {
   const t = escapeHtml(text);
@@ -202,12 +232,61 @@ function renderMarkdown(text) {
 function addLog(message, type) {
   const log = document.getElementById('log');
   log.style.display = 'block';
+  document.getElementById('log-toggle').style.display = 'inline-block';
   const div = document.createElement('div');
   div.className = 'log-' + type;
   div.textContent = message;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
 }
+function toggleLog() {
+  const log = document.getElementById('log');
+  const btn = document.getElementById('log-toggle');
+  const hidden = log.style.display === 'none';
+  log.style.display = hidden ? 'block' : 'none';
+  btn.textContent = hidden ? '▼ Logs' : '▶ Logs';
+}
+function showStats(text) {
+  const stats = document.querySelector('.stats');
+  if (!text) { stats.style.display = 'none'; return; }
+  const words = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
+  const chars = text.length;
+  const minutes = Math.max(1, Math.round(words / 200));
+  document.getElementById('stats-words').textContent = words.toLocaleString() + ' words';
+  document.getElementById('stats-chars').textContent = chars.toLocaleString() + ' chars';
+  document.getElementById('stats-read').textContent = minutes + ' min read';
+  stats.style.display = 'flex';
+}
+let hintTimer = null;
+function startHintTimer() {
+  clearTimeout(hintTimer);
+  document.getElementById('running-hint').style.display = 'none';
+  hintTimer = setTimeout(() => {
+    if (currentController) {
+      document.getElementById('running-hint').style.display = 'block';
+    }
+  }, 15000);
+}
+function clearHint() {
+  clearTimeout(hintTimer);
+  hintTimer = null;
+  document.getElementById('running-hint').style.display = 'none';
+}
+window.addEventListener('beforeunload', e => {
+  if (currentController) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && currentController) {
+    e.preventDefault();
+    currentController.abort();
+  } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    run();
+  }
+});
 function setStatus(text, cls) {
   const status = document.getElementById('status');
   status.textContent = '';
@@ -233,19 +312,26 @@ async function run() {
   const summarize = document.getElementById('summarize').checked;
   log.innerHTML = '';
   log.style.display = 'none';
+  const logBtn = document.getElementById('log-toggle');
+  logBtn.style.display = 'none';
+  logBtn.textContent = '▼ Logs';
+  showStats('');
+  document.getElementById('lang-badge').style.display = 'none';
   result.textContent = '';
   outputCard.style.display = 'none';
   dlRow.style.display = 'none';
   status.innerHTML = '<span class="spinner"></span> Processing...';
   btn.textContent = 'Cancel';
   btn.className = 'cancel';
+  const requestedLang = document.getElementById('lang').value.trim();
   const params = new URLSearchParams({ url });
-  if (document.getElementById('lang').value) params.set('lang', document.getElementById('lang').value);
+  if (requestedLang) params.set('lang', requestedLang);
   params.set('format', fmt);
   if (document.getElementById('timestamps').checked) params.set('timestamps', '1');
   if (summarize) params.set('summarize', '1');
   const controller = new AbortController();
   currentController = controller;
+  startHintTimer();
   try {
     const res = await fetch('/api?' + params, { signal: controller.signal });
     const reader = res.body.getReader();
@@ -265,9 +351,15 @@ async function run() {
         catch (e) { addLog('Malformed event from server', 'warn'); continue; }
         if (!data || typeof data.type !== 'string') continue;
         if (data.type === 'done') {
-          setStatus(data.title, 'ok');
+          status.innerHTML = '';
+          const a = document.createElement('a');
+          a.href = url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.textContent = data.title;
+          status.appendChild(a);
           outputCard.style.display = 'block';
-          lastResult = { text: data.text, filename: data.filename || 'transcript.txt' };
+          lastResult = { text: data.text, filename: data.filename || 'transcript.txt', url: url };
           if ((fmt === 'txt' || summarize) && fmt !== 'json' && fmt !== 'vtt' && fmt !== 'srt') {
             result.className = 'md';
             result.innerHTML = renderMarkdown(data.text);
@@ -275,6 +367,11 @@ async function run() {
             result.className = 'plain';
             result.textContent = data.text;
           }
+          if (requestedLang) {
+            document.getElementById('lang-badge-text').textContent = requestedLang;
+            document.getElementById('lang-badge').style.display = 'block';
+          }
+          showStats(data.text);
           dlRow.style.display = 'flex';
         } else if (data.type === 'error') {
           setStatus(data.message, 'error');
@@ -291,6 +388,7 @@ async function run() {
     }
   }
   currentController = null;
+  clearHint();
   btn.textContent = 'Transcribe';
   btn.className = '';
 }
@@ -324,12 +422,14 @@ function downloadFile() {
   const ext = lastResult.filename.split('.').pop();
   const mime = ext === 'json' ? 'application/json' : ext === 'vtt' ? 'text/vtt' : 'text/plain';
   const blob = new Blob([lastResult.text], { type: mime + ';charset=utf-8' });
-  const url = URL.createObjectURL(blob);
+  const objectUrl = URL.createObjectURL(blob);
+  const customFn = document.getElementById('filename').value.trim();
+  const finalFn = customFn || lastResult.filename;
   const a = document.createElement('a');
-  a.href = url;
-  a.download = lastResult.filename;
+  a.href = objectUrl;
+  a.download = finalFn;
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 </script>
 </body>
