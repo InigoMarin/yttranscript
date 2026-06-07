@@ -1,4 +1,4 @@
-.PHONY: all pkg install clean help
+.PHONY: all pkg install clean rebuild test test-cov lint help
 
 VERSION := 2.2.1
 PKGNAME := yttranscript
@@ -14,6 +14,9 @@ help:
 	@echo "  make install   - Build and install package"
 	@echo "  make clean     - Remove build artifacts"
 	@echo "  make rebuild   - Clean, build and install"
+	@echo "  make test      - Run test suite (pytest)"
+	@echo "  make test-cov  - Run tests with coverage report"
+	@echo "  make lint      - Run pyflakes on source and tests"
 
 $(TARBALL): $(SRC_FILES)
 	rm -rf $(SRC_DIR)
@@ -37,3 +40,12 @@ rebuild: clean install
 clean:
 	rm -rf $(SRC_DIR) $(TARBALL) pkg/ src/ *.pkg.tar.zst *.tar.gz
 	@echo "Cleaned"
+
+test:
+	python -m pytest
+
+test-cov:
+	python -m pytest --cov=yttranscript --cov-report=term-missing
+
+lint:
+	python -m pyflakes yttranscript tests
