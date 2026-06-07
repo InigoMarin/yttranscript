@@ -50,13 +50,13 @@
   .meta-chip { background: var(--input-bg); padding: 0.2rem 0.6rem; border-radius: 4px; border: 1px solid var(--border); }
   .meta-chip b { color: var(--muted); font-weight: 600; margin-right: 0.3em; }
   .meta-chip a { color: var(--accent); text-decoration: underline; word-break: break-all; }
-  .video-card { display: flex; gap: 1rem; margin-bottom: 0.75rem; align-items: flex-start; }
-  .video-card-thumb { flex-shrink: 0; }
-  .video-card-thumb img { width: 160px; height: 90px; border-radius: 6px; object-fit: cover; border: 1px solid var(--border); cursor: pointer; }
+  .video-card { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
+  .video-card-thumb { line-height: 0; }
+  .video-card-thumb img { width: 100%; aspect-ratio: 16/9; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); cursor: pointer; }
   .video-card-thumb img:hover { opacity: 0.9; }
-  .video-card-info { flex: 1; min-width: 0; }
-  .video-card-info h1 { font-size: 1.1rem; margin: 0 0 0.5rem; color: var(--accent); }
-  .video-card-info .meta-row { margin: 0; }
+  .video-card-info { }
+  .video-card-info h1 { font-size: 1.1rem; margin: 0 0 0.25rem; color: var(--accent); }
+  .video-card-stats { font-size: 0.8rem; color: var(--muted); display: flex; gap: 0.75rem; flex-wrap: wrap; }
   #output-card .stats { margin: 0.5rem 0; }
   #status a { color: var(--ok); text-decoration: underline; }
   #status a:hover { opacity: 0.8; }
@@ -92,8 +92,7 @@
     .lang-input { width: 100%; }
     select { width: 100%; }
     button:not(.theme-btn):not(.secondary) { width: 100%; }
-    .video-card { flex-direction: column; }
-    .video-card-thumb img { width: 100%; height: auto; }
+    .video-card-thumb img { width: 100%; }
     .card { padding: 1rem; }
     h1 { font-size: 1.25rem; }
   }
@@ -134,7 +133,6 @@
     <div id="log"></div>
   </div>
   <div class="card" id="output-card" style="display:none;">
-    <div class="stats"><span id="stats-words"></span><span id="stats-chars"></span><span id="stats-read"></span></div>
     <div id="result"></div>
   </div>
 </div>
@@ -284,7 +282,7 @@ function renderMarkdown(text) {
       if (html.length > 0 && /^<h[1-3]>/.test(html[html.length - 1])) {
         titleHtml = html.pop();
       }
-      const chips = metaMatches.filter(m => m[1] !== 'URL').map(m => {
+      const chips = metaMatches.filter(m => m[1] !== 'URL' && m[1] !== 'Duration' && m[1] !== 'Transcribed').map(m => {
         const label = m[1];
         let val = m[2];
         if (/^https?:\/\//.test(val)) {
@@ -296,6 +294,7 @@ function renderMarkdown(text) {
         html.push('<div class="video-card">' +
           '<div class="video-card-thumb">' + thumbHtml + '</div>' +
           '<div class="video-card-info">' + titleHtml +
+          '<div id="video-card-stats" class="video-card-stats"></div>' +
           '<div class="meta-row">' + chips.join('') + '</div></div></div>');
       } else {
         if (titleHtml) html.push(titleHtml);
@@ -326,15 +325,19 @@ function toggleLog() {
   btn.textContent = hidden ? '▼ Logs' : '▶ Logs';
 }
 function showStats(text) {
-  const stats = document.querySelector('.stats');
-  if (!text) { stats.style.display = 'none'; return; }
+  const vcStats = document.getElementById('video-card-stats');
+  if (!vcStats) return;
+  if (!text) { vcStats.style.display = 'none'; vcStats.innerHTML = ''; return; }
   const words = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
-  const chars = text.length;
   const minutes = Math.max(1, Math.round(words / 200));
-  document.getElementById('stats-words').textContent = words.toLocaleString() + ' words';
-  document.getElementById('stats-chars').textContent = chars.toLocaleString() + ' chars';
-  document.getElementById('stats-read').textContent = minutes + ' min read';
-  stats.style.display = 'flex';
+  const durMatch = text.match(/\*\*Duration:\*\*\s*(.+)/);
+  const dur = durMatch ? durMatch[1].trim() : '';
+  const parts = [];
+  if (dur) parts.push('<span>\u23F1\uFE0F ' + dur + '</span>');
+  parts.push('<span>\uD83D\uDCDD ' + words.toLocaleString() + ' palabras</span>');
+  parts.push('<span>\uD83D\uDCD6 ' + minutes + ' min de lectura</span>');
+  vcStats.innerHTML = parts.join('');
+  vcStats.style.display = 'flex';
 }
 let hintTimer = null;
 function startHintTimer() {
