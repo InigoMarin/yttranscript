@@ -17,6 +17,12 @@ With Whisper support pre-declared:
 pip install ".[whisper]"
 ```
 
+With PDF export support:
+
+```bash
+pip install ".[pdf]"
+```
+
 ### Arch Linux
 
 ```bash
@@ -47,6 +53,9 @@ yttranscript URL --format vtt
 
 # Output as SRT (universal subtitle format for VLC, editors, etc.)
 yttranscript URL --format srt
+
+# Export as styled PDF
+yttranscript URL --format pdf
 
 # Include [MM:SS] timestamps in text output
 yttranscript URL --timestamps
@@ -106,7 +115,7 @@ yttranscript URL --keep-vtt --keep-audio
 | Flag | Description |
 |---|---|
 | `-o, --output` | Output filename (without extension). Default: video title. |
-| `-f, --format` | `txt` (default), `vtt`, `srt`, or `json` (chunked for RAG) |
+| `-f, --format` | `txt` (default), `vtt`, `srt`, `json` (chunked for RAG), or `pdf` (requires `pip install ".[pdf]"`) |
 | `--timestamps` | Include `[MM:SS]` timestamps in text output (config: `timestamps`) |
 | `--chunk-size` | Seconds per chunk for JSON output (default: 30, config: `chunk_size`) |
 | `--lang` | Subtitle language code (default: auto-detect, config: `lang`) |
@@ -274,6 +283,7 @@ Features:
 
 - **yt-dlp** — declared as a pip dependency (installed with `pip install .`); if missing at runtime, auto-installed via pip with brew/apt fallback
 - **openai-whisper** — only needed for Whisper fallback, prompted before install (install upfront with `pip install ".[whisper]"`)
+- **weasyprint** + **markdown** — only needed for PDF export (install upfront with `pip install ".[pdf]"`)
 - **ffmpeg** — required by Whisper for audio processing
 - **script** (BSD/Linux `util-linux`) — required by `--summarize` to capture command output via pseudo-terminal (not available on Windows)
 

@@ -18,9 +18,11 @@ from .vtt import (
     vtt_to_srt,
     format_video_header,
     extract_vtt_plain_text,
+    _vtt_to_plain,
 )
 from .whisper import transcribe_with_whisper
 from .summarize import summarize_text
+from .pdf import markdown_to_pdf
 from .ytdlp import (
     ensure_yt_dlp,
     get_video_title,
@@ -65,8 +67,13 @@ def _render_output(
             print(summary)
         else:
             output_dir.mkdir(parents=True, exist_ok=True)
-            out = output_dir / f"{video_info.get('title', 'transcript')}.txt"
-            out.write_text(format_video_header(video_info) + summary + "\n", encoding="utf-8")
+            full_text = format_video_header(video_info) + summary + "\n"
+            if fmt == "pdf":
+                out = output_dir / f"{video_info.get('title', 'transcript')}.pdf"
+                markdown_to_pdf(full_text, out)
+            else:
+                out = output_dir / f"{video_info.get('title', 'transcript')}.txt"
+                out.write_text(full_text, encoding="utf-8")
             success(f"Saved: {out}")
         return None
 
@@ -105,6 +112,11 @@ def _render_output(
         info("Converting to SRT subtitles...")
         out = output_dir / f"{vtt_path.stem}.srt"
         out.write_text(vtt_to_srt(vtt_path), encoding="utf-8")
+        success(f"Saved: {out}")
+    elif fmt == "pdf":
+        md_text = _vtt_to_plain(vtt_path, video_info, timestamps=timestamps)
+        out = output_dir / f"{vtt_path.stem}.pdf"
+        markdown_to_pdf(md_text, out)
         success(f"Saved: {out}")
     else:  # txt
         info("Converting to plain text (deduplicating lines)...")

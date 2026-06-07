@@ -151,6 +151,27 @@ def test_render_vtt_same_dir_no_move(tmp_path):
     assert saved == vtt  # same path
 
 
+# --- _render_output: pdf mode --------------------------------------------
+
+def test_render_pdf_creates_valid_pdf(tmp_path):
+    """fmt='pdf' produces a valid PDF file in output_dir."""
+    pytest.importorskip("weasyprint")
+    pytest.importorskip("markdown")
+    vtt = tmp_path / "video.vtt"
+    vtt.write_text("WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello world\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+    saved = _render_output(
+        vtt_path=vtt, video_info={"title": "video", "url": "U", "duration": 2, "whisper": False},
+        fmt="pdf", stdout_mode=False, timestamps=False, chunk_size=30,
+        summarize=False, summarize_cmd=None, summarize_prompt=None,
+        summarize_timeout=300, keep_vtt=False, output_dir=out_dir,
+    )
+    pdf_file = out_dir / "video.pdf"
+    assert saved == pdf_file
+    assert pdf_file.exists()
+    assert pdf_file.read_bytes()[:5] == b"%PDF-"
+
+
 # --- _render_output: stdout mode ------------------------------------------
 
 def test_render_stdout_txt_prints_and_no_file(tmp_path):

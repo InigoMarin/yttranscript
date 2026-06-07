@@ -59,9 +59,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-f", "--format",
-        choices=["txt", "vtt", "srt", "json"],
+        choices=["txt", "vtt", "srt", "json", "pdf"],
         default=None,
-        help="Output format (default: txt, config: format). json = chunked for RAG.",
+        help="Output format (default: txt, config: format). json = chunked for RAG. pdf = styled markdown PDF.",
     )
     parser.add_argument(
         "--chunk-size",
