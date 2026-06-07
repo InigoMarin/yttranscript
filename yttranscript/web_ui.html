@@ -40,6 +40,9 @@
   #result.md li { margin: 0.15rem 0; }
   .error { color: var(--err); }
   .ok { color: var(--ok); }
+  input[type="text"].invalid { border-color: var(--err); }
+  .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.5rem; }
+  .hint.warn { color: var(--err); }
   #log { max-height: 180px; overflow-y: auto; margin-top: 0.75rem; font-size: 0.8rem; font-family: monospace; display: none; }
   .log-info { color: var(--muted); }
   .log-success { color: var(--ok); }
@@ -64,6 +67,13 @@
 </style>
 </head>
 <body>
+<noscript>
+  <div class="container">
+    <div class="card">
+      <p>This UI requires JavaScript. Use the CLI instead: <code>yttranscript &lt;URL&gt;</code></p>
+    </div>
+  </div>
+</noscript>
 <div class="container">
   <h1>&#9733; yttranscript <button id="theme-toggle" class="theme-btn" title="Toggle theme">&#9788;</button></h1>
   <div class="card">
@@ -81,6 +91,7 @@
         <button onclick="downloadFile()" id="dl-btn">Download</button>
       </div>
     </div>
+    <div id="summarize-hint" class="hint warn" style="display:none;">Requires <code>summarize_cmd</code> to be set in config to actually summarize.</div>
     <div id="status"></div>
     <div id="log"></div>
   </div>
@@ -91,22 +102,76 @@
 <script>
 let lastResult = null;
 let currentController = null;
+function safeGet(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+function safeSet(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) {}
+}
 function setTheme(theme) {
-  document.documentElement.className = theme;
-  localStorage.setItem('theme', theme);
+  document.documentElement.classList.toggle('light', theme === 'light');
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+  safeSet('theme', theme);
+}
+function currentTheme() {
+  return document.documentElement.classList.contains('light') ? 'light' : 'dark';
 }
 (function initTheme() {
-  const saved = localStorage.getItem('theme');
+  const saved = safeGet('theme');
   if (saved) {
     setTheme(saved);
   } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
     setTheme('light');
   }
   document.getElementById('theme-toggle').addEventListener('click', function() {
-    const cur = document.documentElement.className;
-    setTheme(cur === 'light' ? 'dark' : 'light');
+    setTheme(currentTheme() === 'light' ? 'dark' : 'light');
   });
 })();
+const FORM_KEY = 'form-state';
+function saveForm() {
+  safeSet(FORM_KEY, JSON.stringify({
+    url: document.getElementById('url').value,
+    lang: document.getElementById('lang').value,
+    format: document.getElementById('format').value,
+    timestamps: document.getElementById('timestamps').checked,
+    summarize: document.getElementById('summarize').checked,
+  }));
+}
+function restoreForm() {
+  const raw = safeGet(FORM_KEY);
+  if (!raw) return;
+  try {
+    const s = JSON.parse(raw);
+    if (typeof s.url === 'string') document.getElementById('url').value = s.url;
+    if (typeof s.lang === 'string') document.getElementById('lang').value = s.lang;
+    if (typeof s.format === 'string') document.getElementById('format').value = s.format;
+    if (typeof s.timestamps === 'boolean') document.getElementById('timestamps').checked = s.timestamps;
+    if (typeof s.summarize === 'boolean') document.getElementById('summarize').checked = s.summarize;
+  } catch (e) {}
+}
+function initFormPersistence() {
+  restoreForm();
+  document.getElementById('url').addEventListener('input', saveForm);
+  document.getElementById('lang').addEventListener('input', saveForm);
+  document.getElementById('format').addEventListener('change', saveForm);
+  document.getElementById('timestamps').addEventListener('change', saveForm);
+  document.getElementById('summarize').addEventListener('change', saveForm);
+}
+initFormPersistence();
+const YOUTUBE_URL_RE = /^https?:\/\/(?:[a-z0-9-]+\.)*(?:youtube\.com|youtu\.be|youtube-nocookie\.com)\//i;
+function validateUrl() {
+  const el = document.getElementById('url');
+  const v = el.value.trim();
+  el.classList.toggle('invalid', v !== '' && !YOUTUBE_URL_RE.test(v));
+}
+document.getElementById('url').addEventListener('blur', validateUrl);
+document.getElementById('url').addEventListener('input', validateUrl);
+function updateSummarizeHint() {
+  document.getElementById('summarize-hint').style.display =
+    document.getElementById('summarize').checked ? 'block' : 'none';
+}
+document.getElementById('summarize').addEventListener('change', updateSummarizeHint);
+updateSummarizeHint();
 function escapeHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
@@ -171,7 +236,6 @@ async function run() {
   result.textContent = '';
   outputCard.style.display = 'none';
   dlRow.style.display = 'none';
-  setStatus('', '');
   status.innerHTML = '<span class="spinner"></span> Processing...';
   btn.textContent = 'Cancel';
   btn.className = 'cancel';
@@ -196,7 +260,10 @@ async function run() {
         const raw = buffer.slice(0, idx);
         buffer = buffer.slice(idx + 2);
         if (!raw.startsWith('data: ')) continue;
-        const data = JSON.parse(raw.slice(6));
+        let data;
+        try { data = JSON.parse(raw.slice(6)); }
+        catch (e) { addLog('Malformed event from server', 'warn'); continue; }
+        if (!data || typeof data.type !== 'string') continue;
         if (data.type === 'done') {
           setStatus(data.title, 'ok');
           outputCard.style.display = 'block';
@@ -232,9 +299,24 @@ async function copyText() {
   const result = document.getElementById('result');
   const text = result.className === 'md' ? result.innerText : result.textContent;
   if (!text) return;
-  await navigator.clipboard.writeText(text);
   const btn = document.getElementById('copy-btn');
-  btn.textContent = 'Copied!';
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = 'Copied!';
+  } catch (e) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      btn.textContent = document.execCommand('copy') ? 'Copied!' : 'Copy failed';
+      document.body.removeChild(ta);
+    } catch (e2) {
+      btn.textContent = 'Copy failed';
+    }
+  }
   setTimeout(() => btn.textContent = 'Copy', 1500);
 }
 function downloadFile() {
@@ -242,11 +324,12 @@ function downloadFile() {
   const ext = lastResult.filename.split('.').pop();
   const mime = ext === 'json' ? 'application/json' : ext === 'vtt' ? 'text/vtt' : 'text/plain';
   const blob = new Blob([lastResult.text], { type: mime + ';charset=utf-8' });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  a.href = url;
   a.download = lastResult.filename;
   a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 </script>
 </body>

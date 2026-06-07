@@ -27,7 +27,7 @@ from pathlib import Path
 
 from .log import success, warn, ThreadLocalStdout, stdout_capture
 from .config import load_config, resolve_value
-from .util import sanitize_filename, TranscriptError
+from .util import sanitize_filename, TranscriptError, is_valid_lang_code
 from .core import process_video
 
 
@@ -127,6 +127,9 @@ class TranscriptHandler(BaseHTTPRequestHandler):
             return
 
         lang = params.get("lang", [None])[0]
+        if lang and not is_valid_lang_code(lang):
+            self._json_response({"error": f"Invalid language code: {lang}"})
+            return
         fmt = params.get("format", ["txt"])[0]
         if fmt not in ("txt", "json", "vtt", "srt"):
             self._json_response({"error": f"Invalid format: {fmt}"})
