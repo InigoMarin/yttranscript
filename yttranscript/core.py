@@ -56,10 +56,18 @@ def _render_output(
         info("Extracting text for summarization...")
         text = extract_vtt_plain_text(vtt_path)
         vtt_path.unlink(missing_ok=True)
-        print(format_video_header(video_info), end="")
         success(f"Piping transcript to: {summarize_cmd}")
-        if not summarize_text(text, summarize_cmd, summarize_prompt or "", summarize_timeout):
+        summary = summarize_text(text, summarize_cmd, summarize_prompt or "", summarize_timeout)
+        if not summary:
             raise TranscriptError("Summarization failed.")
+        if stdout_mode:
+            print(format_video_header(video_info), end="")
+            print(summary)
+        else:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            out = output_dir / f"{video_info.get('title', 'transcript')}.txt"
+            out.write_text(format_video_header(video_info) + summary + "\n", encoding="utf-8")
+            success(f"Saved: {out}")
         return None
 
     if stdout_mode:

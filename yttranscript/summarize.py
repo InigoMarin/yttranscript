@@ -13,19 +13,22 @@ import shlex
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 from .log import info, debug, error
 
 
-def summarize_text(text: str, cmd: str, prompt: str, timeout: int = 300) -> bool:
+def summarize_text(text: str, cmd: str, prompt: str, timeout: int = 300) -> Optional[str]:
     """Send text to an external command for summarization.
 
     Uses `script` to capture all terminal output (including /dev/tty writes)
     into a temp file. Extracts only the model's response and cleans thinking.
+
+    Returns the cleaned summary text on success, or None on failure.
     """
     if not cmd or not cmd.strip():
         error("Summarize command is empty.")
-        return False
+        return None
 
     full_input = f"{prompt} {text}"
     cmd_parts = shlex.split(cmd)
@@ -58,14 +61,14 @@ def summarize_text(text: str, cmd: str, prompt: str, timeout: int = 300) -> bool
             )
         except subprocess.TimeoutExpired:
             error(f"Summarize command timed out after {timeout} seconds.")
-            return False
+            return None
         except FileNotFoundError:
             error(f"Summarize command not found: '{cmd_parts[0]}'. Is it installed and on your PATH?")
-            return False
+            return None
 
         if result.returncode != 0:
             error(f"Summarize command failed (exit code {result.returncode}). Check your --summarize-cmd configuration.")
-            return False
+            return None
 
         raw = Path(tmp_path).read_text()
 
@@ -75,7 +78,7 @@ def summarize_text(text: str, cmd: str, prompt: str, timeout: int = 300) -> bool
 
         if not output:
             error("Summarize command produced no output.")
-            return False
+            return None
 
         # llama-cli output structure:
         #   [banner, loading, commands...]
@@ -102,12 +105,7 @@ def summarize_text(text: str, cmd: str, prompt: str, timeout: int = 300) -> bool
         clean = re.sub(r"\[Start thinking\].*$", "", clean, flags=re.DOTALL)
         clean = clean.strip()
 
-        if clean:
-            print(clean)
-        else:
-            print(output)
-
-        return True
+        return clean if clean else output
     finally:
         os.unlink(tmp_path)
         os.unlink(input_tmp.name)

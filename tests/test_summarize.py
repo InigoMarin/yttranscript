@@ -32,91 +32,86 @@ def _fake_script_writer(response_text: str):
 
 # --- success cases --------------------------------------------------------
 
-def test_summarize_success_prints_response(capsys):
+def test_summarize_success_returns_response():
     fake = _fake_script_writer("This is the summary.")
     with patch("yttranscript.summarize.subprocess.run", side_effect=fake):
         result = summarize_text("body text", "llama-cli -m x", "Summarize this")
-    assert result is True
-    captured = capsys.readouterr()
-    assert "This is the summary." in captured.out
+    assert result is not None
+    assert "This is the summary." in result
 
 
-def test_summarize_multiline_response(capsys):
+def test_summarize_multiline_response():
     response = "Line one\nLine two\nLine three"
     fake = _fake_script_writer(response)
     with patch("yttranscript.summarize.subprocess.run", side_effect=fake):
         result = summarize_text("body", "cmd", "prompt")
-    assert result is True
-    captured = capsys.readouterr()
+    assert result is not None
     for line in ("Line one", "Line two", "Line three"):
-        assert line in captured.out
+        assert line in result
 
 
-def test_summarize_strips_thinking_blocks(capsys):
+def test_summarize_strips_thinking_blocks():
     response = "[Start thinking]\ninternal reasoning\n[End thinking]\nVisible answer"
     fake = _fake_script_writer(response)
     with patch("yttranscript.summarize.subprocess.run", side_effect=fake):
         result = summarize_text("body", "cmd", "prompt")
-    assert result is True
-    captured = capsys.readouterr()
-    assert "Visible answer" in captured.out
-    assert "internal reasoning" not in captured.out
+    assert result is not None
+    assert "Visible answer" in result
+    assert "internal reasoning" not in result
 
 
-def test_summarize_strips_unclosed_thinking(capsys):
+def test_summarize_strips_unclosed_thinking():
     response = "[Start thinking]\ntruncated thinking\n"
     fake = _fake_script_writer(response)
     with patch("yttranscript.summarize.subprocess.run", side_effect=fake):
         result = summarize_text("body", "cmd", "prompt")
-    assert result is True
-    # Falls back to printing raw output when clean is empty
-    captured = capsys.readouterr()
-    assert len(captured.out) > 0
+    # Falls back to raw output when clean is empty
+    assert result is not None
+    assert len(result) > 0
 
 
-def test_summarize_strips_ansi_escape_codes(capsys):
+def test_summarize_strips_ansi_escape_codes():
     response = "\033[32mGreen text\033[0m here"
     fake = _fake_script_writer(response)
     with patch("yttranscript.summarize.subprocess.run", side_effect=fake):
         result = summarize_text("body", "cmd", "prompt")
-    assert result is True
-    captured = capsys.readouterr()
-    assert "\033[32m" not in captured.out
-    assert "Green text" in captured.out
+    assert result is not None
+    assert "\033[32m" not in result
+    assert "Green text" in result
 
 
-def test_summarize_strips_spinner_residue(capsys):
+def test_summarize_strips_spinner_residue():
     response = "| / - \\ Processing done"
     fake = _fake_script_writer(response)
     with patch("yttranscript.summarize.subprocess.run", side_effect=fake):
-        summarize_text("body", "cmd", "prompt")
-    captured = capsys.readouterr()
-    assert "Processing done" in captured.out
+        result = summarize_text("body", "cmd", "prompt")
+    assert result is not None
+    assert "Processing done" in result
 
 
 # --- failure cases --------------------------------------------------------
 
-def test_summarize_command_failure_returns_false():
+def test_summarize_command_failure_returns_none():
     with patch("yttranscript.summarize.subprocess.run", return_value=_cp(1)):
         result = summarize_text("body", "cmd", "prompt")
-    assert result is False
+    assert result is None
 
 
-def test_summarize_timeout_returns_false():
+def test_summarize_timeout_returns_none():
     with patch("yttranscript.summarize.subprocess.run",
                side_effect=subprocess.TimeoutExpired(cmd="script", timeout=1)):
         result = summarize_text("body", "cmd", "prompt", timeout=1)
-    assert result is False
+    assert result is None
 
 
-def test_summarize_command_not_found_returns_false():
+def test_summarize_command_not_found_returns_none():
     with patch("yttranscript.summarize.subprocess.run",
                side_effect=FileNotFoundError("script not found")):
         result = summarize_text("body", "cmd", "prompt")
-    assert result is False
+    assert result is None
 
 
-def test_summarize_empty_output_returns_false():
+def test_summarize_empty_output_returns_none():
     def write_empty(args, **kwargs):
         outfile = args[3]
         with open(outfile, "w") as f:
@@ -124,19 +119,19 @@ def test_summarize_empty_output_returns_false():
         return _cp(0)
     with patch("yttranscript.summarize.subprocess.run", side_effect=write_empty):
         result = summarize_text("body", "cmd", "prompt")
-    assert result is False
+    assert result is None
 
 
 # --- command expansion ----------------------------------------------------
 
-def test_summarize_empty_cmd_returns_false():
+def test_summarize_empty_cmd_returns_none():
     result = summarize_text("body", "", "prompt")
-    assert result is False
+    assert result is None
 
 
-def test_summarize_whitespace_cmd_returns_false():
+def test_summarize_whitespace_cmd_returns_none():
     result = summarize_text("body", "   ", "prompt")
-    assert result is False
+    assert result is None
 
 
 def test_summarize_expands_user_path():
