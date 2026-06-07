@@ -184,3 +184,84 @@ def extract_vtt_plain_text(vtt_path: Path) -> str:
                 seen.add(text)
                 lines.append(text)
     return " ".join(lines)
+
+
+def _vtt_ts_to_ms(ts: str) -> int:
+    """Convert VTT timestamp 'HH:MM:SS.mmm' to milliseconds."""
+    ts = ts.strip().split()[0]
+    parts = ts.split(":")
+    if len(parts) == 3:
+        h, m, s = parts
+    elif len(parts) == 2:
+        h, m, s = "0", parts[0], parts[1]
+    else:
+        return 0
+    sec_parts = s.split(".")
+    whole_sec = int(sec_parts[0])
+    milli = int(sec_parts[1]) if len(sec_parts) > 1 and sec_parts[1].isdigit() else 0
+    return int(h) * 3_600_000 + int(m) * 60_000 + whole_sec * 1_000 + milli
+
+
+def _ms_to_srt_time(ms: int) -> str:
+    """Convert milliseconds to SRT timestamp 'HH:MM:SS,mmm'."""
+    h = ms // 3_600_000
+    m = (ms % 3_600_000) // 60_000
+    s = (ms % 60_000) // 1_000
+    milli = ms % 1_000
+    return f"{h:02d}:{m:02d}:{s:02d},{milli:03d}"
+
+
+def vtt_to_srt(vtt_path: Path) -> str:
+    """Convert VTT to SRT subtitle format."""
+    cues: list[tuple[int, int, list[str]]] = []
+    current_start: Optional[int] = None
+    current_end: Optional[int] = None
+    cue_lines: list[str] = []
+
+    with open(vtt_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                if current_start is not None and cue_lines:
+                    cleaned = [_clean_vtt_text(l) for l in cue_lines]
+                    cleaned = [c for c in cleaned if c]
+                    if cleaned:
+                        cues.append((current_start, current_end or 0, cleaned))
+                    cue_lines = []
+                    current_start = None
+                    current_end = None
+                continue
+            if line.startswith("WEBVTT") or line.startswith("Kind:") or line.startswith("Language:"):
+                continue
+            if "-->" in line:
+                parts = line.split("-->", 1)
+                current_start = _vtt_ts_to_ms(parts[0])
+                current_end = _vtt_ts_to_ms(parts[1]) if len(parts) > 1 else None
+                cue_lines = []
+                continue
+            if current_start is not None:
+                cue_lines.append(line)
+
+    if current_start is not None and cue_lines:
+        cleaned = [_clean_vtt_text(l) for l in cue_lines]
+        cleaned = [c for c in cleaned if c]
+        if cleaned:
+            cues.append((current_start, current_end or 0, cleaned))
+
+    deduped: list[tuple[int, int, list[str]]] = []
+    last_text = ""
+    for start, end, lines in cues:
+        text = "\n".join(lines)
+        if text != last_text:
+            deduped.append((start, end, lines))
+            last_text = text
+
+    srt_blocks: list[str] = []
+    for i, (start, end, lines) in enumerate(deduped, 1):
+        end_ms = end if end > start else start + 3000
+        srt_blocks.append(str(i))
+        srt_blocks.append(f"{_ms_to_srt_time(start)} --> {_ms_to_srt_time(end_ms)}")
+        srt_blocks.extend(lines)
+        srt_blocks.append("")
+
+    return "\n".join(srt_blocks)

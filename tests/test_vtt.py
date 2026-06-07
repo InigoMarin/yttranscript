@@ -264,3 +264,102 @@ def test_format_video_header_source_label():
     h_whisper = vtt.format_video_header({"title": "T", "url": "U", "duration": 0, "whisper": True})
     assert "YouTube subtitles" in h_sub
     assert "Whisper" in h_whisper
+
+
+# --- SRT conversion -------------------------------------------------------
+
+def test_vtt_to_srt_basic_structure(sample_vtt_path):
+    out = vtt.vtt_to_srt(sample_vtt_path)
+    blocks = out.strip().split("\n\n")
+    assert len(blocks) == 4
+    assert blocks[0].startswith("1\n")
+    assert blocks[1].startswith("2\n")
+    assert blocks[3].startswith("4\n")
+
+
+def test_vtt_to_srt_uses_comma_separator(sample_vtt_path):
+    out = vtt.vtt_to_srt(sample_vtt_path)
+    assert "," in out
+    assert ".000 -->" not in out
+    assert "00:00:00,000 --> 00:00:02,500" in out
+
+
+def test_vtt_to_srt_strips_html_and_entities(sample_vtt_path):
+    out = vtt.vtt_to_srt(sample_vtt_path)
+    assert "<b>" not in out
+    assert "&amp;" not in out
+    assert "&" in out
+    assert "'" in out
+
+
+def test_vtt_to_srt_dedups_consecutive(tmp_path):
+    p = tmp_path / "dup.vtt"
+    p.write_text(
+        "WEBVTT\n\n"
+        "00:00:00.000 --> 00:00:02.000\n"
+        "Repeated\n"
+        "\n"
+        "00:00:02.000 --> 00:00:04.000\n"
+        "Repeated\n"
+        "\n"
+        "00:00:04.000 --> 00:00:06.000\n"
+        "Unique\n",
+        encoding="utf-8",
+    )
+    out = vtt.vtt_to_srt(p)
+    blocks = out.strip().split("\n\n")
+    assert len(blocks) == 2
+    assert "Repeated" in blocks[0]
+    assert "Unique" in blocks[1]
+
+
+def test_vtt_to_srt_multiline_cue(tmp_path):
+    p = tmp_path / "test.vtt"
+    p.write_text(
+        "WEBVTT\n\n"
+        "00:00:01.000 --> 00:00:03.000\n"
+        "Line one\n"
+        "Line two\n",
+        encoding="utf-8",
+    )
+    out = vtt.vtt_to_srt(p)
+    blocks = out.strip().split("\n\n")
+    assert len(blocks) == 1
+    lines = blocks[0].split("\n")
+    assert "Line one" in lines
+    assert "Line two" in lines
+
+
+def test_vtt_to_srt_empty_file(tmp_path):
+    p = tmp_path / "empty.vtt"
+    p.write_text("WEBVTT\n", encoding="utf-8")
+    out = vtt.vtt_to_srt(p)
+    assert out.strip() == ""
+
+
+def test_vtt_to_srt_strips_positioning(tmp_path):
+    p = tmp_path / "pos.vtt"
+    p.write_text(
+        "WEBVTT\n\n"
+        "00:00:01.000 --> 00:00:03.000 align:start position:0%\n"
+        " Positioned text\n",
+        encoding="utf-8",
+    )
+    out = vtt.vtt_to_srt(p)
+    assert "00:00:01,000 --> 00:00:03,000" in out
+    assert "Positioned text" in out
+    assert "align:" not in out
+
+
+def test_vtt_ts_to_ms():
+    assert vtt._vtt_ts_to_ms("00:00:01.500") == 1500
+    assert vtt._vtt_ts_to_ms("00:01:23.000") == 83000
+    assert vtt._vtt_ts_to_ms("01:02:03.250") == 3723250
+    assert vtt._vtt_ts_to_ms("00:02") == 2000
+
+
+def test_ms_to_srt_time():
+    assert vtt._ms_to_srt_time(0) == "00:00:00,000"
+    assert vtt._ms_to_srt_time(1500) == "00:00:01,500"
+    assert vtt._ms_to_srt_time(83000) == "00:01:23,000"
+    assert vtt._ms_to_srt_time(3723250) == "01:02:03,250"

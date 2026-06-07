@@ -15,6 +15,7 @@ from .vtt import (
     vtt_to_json,
     vtt_to_text,
     vtt_to_stdout,
+    vtt_to_srt,
     format_video_header,
     extract_vtt_plain_text,
 )
@@ -78,6 +79,8 @@ def _render_output(
     if stdout_mode:
         if fmt == "vtt":
             sys.stdout.write(vtt_path.read_text(encoding="utf-8"))
+        elif fmt == "srt":
+            sys.stdout.write(vtt_to_srt(vtt_path))
         elif fmt == "json":
             sys.stdout.write(vtt_to_json(vtt_path, video_info, chunk_size=chunk_size))
         else:
@@ -103,6 +106,11 @@ def _render_output(
         info("Converting to JSON (chunked for RAG)...")
         out = output_dir / f"{vtt_path.stem}.json"
         out.write_text(vtt_to_json(vtt_path, video_info, chunk_size=chunk_size), encoding="utf-8")
+        success(f"Saved: {out}")
+    elif fmt == "srt":
+        info("Converting to SRT subtitles...")
+        out = output_dir / f"{vtt_path.stem}.srt"
+        out.write_text(vtt_to_srt(vtt_path), encoding="utf-8")
         success(f"Saved: {out}")
     else:  # txt
         info("Converting to plain text (deduplicating lines)...")

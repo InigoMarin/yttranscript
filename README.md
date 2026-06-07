@@ -45,6 +45,9 @@ yttranscript URL --lang es
 # Output as VTT (with timestamps)
 yttranscript URL --format vtt
 
+# Output as SRT (universal subtitle format for VLC, editors, etc.)
+yttranscript URL --format srt
+
 # Include [MM:SS] timestamps in text output
 yttranscript URL --timestamps
 
@@ -103,7 +106,7 @@ yttranscript URL --keep-vtt --keep-audio
 | Flag | Description |
 |---|---|
 | `-o, --output` | Output filename (without extension). Default: video title. |
-| `-f, --format` | `txt` (default), `vtt`, or `json` (chunked for RAG) |
+| `-f, --format` | `txt` (default), `vtt`, `srt`, or `json` (chunked for RAG) |
 | `--timestamps` | Include `[MM:SS]` timestamps in text output (config: `timestamps`) |
 | `--chunk-size` | Seconds per chunk for JSON output (default: 30, config: `chunk_size`) |
 | `--lang` | Subtitle language code (default: auto-detect, config: `lang`) |
@@ -293,6 +296,9 @@ yttranscript "https://youtube.com/watch?v=dQw4w9WgXcQ"
 
 # Spanish webinar, VTT format
 yttranscript "https://youtube.com/watch?v=VIDEO_ID" --lang es --format vtt
+
+# Export as SRT subtitles for a video editor / VLC
+yttranscript "https://youtube.com/watch?v=VIDEO_ID" --format srt
 
 # Spanish video with timestamps for navigation
 yttranscript "https://youtube.com/watch?v=VIDEO_ID" --lang es --timestamps

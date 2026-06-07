@@ -99,7 +99,7 @@ WEB_HTML = r"""<!DOCTYPE html>
     <input type="text" id="url" placeholder="Paste YouTube URL..." />
     <div class="row">
       <label>Lang <input type="text" id="lang" list="lang-codes" placeholder="Auto" class="lang-input"><datalist id="lang-codes"><option value="en"><option value="es"><option value="fr"><option value="de"><option value="pt"><option value="it"><option value="ja"><option value="zh"><option value="ko"><option value="ar"><option value="ru"><option value="nl"><option value="pl"><option value="tr"></datalist></label>
-      <label>Format <select id="format"><option value="txt">txt</option><option value="json">json</option><option value="vtt">vtt</option></select></label>
+      <label>Format <select id="format"><option value="txt">txt</option><option value="json">json</option><option value="vtt">vtt</option><option value="srt">srt</option></select></label>
       <label><input type="checkbox" id="timestamps"> Timestamps</label>
       <label><input type="checkbox" id="summarize"> Summarize</label>
     </div>
@@ -214,7 +214,7 @@ async function run() {
           setStatus(data.title, 'ok');
           outputCard.style.display = 'block';
           lastResult = { text: data.text, filename: data.filename || 'transcript.txt' };
-          if ((fmt === 'txt' || summarize) && fmt !== 'json' && fmt !== 'vtt') {
+          if ((fmt === 'txt' || summarize) && fmt !== 'json' && fmt !== 'vtt' && fmt !== 'srt') {
             result.className = 'md';
             result.innerHTML = renderMarkdown(data.text);
           } else {
@@ -346,7 +346,7 @@ class TranscriptHandler(BaseHTTPRequestHandler):
 
         lang = params.get("lang", [None])[0]
         fmt = params.get("format", ["txt"])[0]
-        if fmt not in ("txt", "json", "vtt"):
+        if fmt not in ("txt", "json", "vtt", "srt"):
             self._json_response({"error": f"Invalid format: {fmt}"})
             return
         timestamps = params.get("timestamps", ["0"])[0] == "1"
@@ -424,7 +424,7 @@ class TranscriptHandler(BaseHTTPRequestHandler):
             _transcription_slots.release()
 
         text = buf.getvalue()
-        ext = {"json": ".json", "txt": ".txt", "vtt": ".vtt"}.get(fmt, ".txt")
+        ext = {"json": ".json", "txt": ".txt", "vtt": ".vtt", "srt": ".srt"}.get(fmt, ".txt")
         filename = sanitize_filename(title) + ext
 
         try:

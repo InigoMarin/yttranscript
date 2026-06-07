@@ -59,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-f", "--format",
-        choices=["txt", "vtt", "json"],
+        choices=["txt", "vtt", "srt", "json"],
         default=None,
         help="Output format (default: txt, config: format). json = chunked for RAG.",
     )
