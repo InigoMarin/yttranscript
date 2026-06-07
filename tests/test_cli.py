@@ -337,6 +337,13 @@ def test_validate_rejects_zero_latest(monkeypatch):
     assert exc.value.code == 2
 
 
+def test_validate_rejects_bad_lang(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["yttranscript", "URL", "--lang", "español"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+
+
 # --- ensure_config_dir timing ---------------------------------------------
 
 def test_config_dir_not_created_for_version(monkeypatch):

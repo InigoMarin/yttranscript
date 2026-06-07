@@ -278,3 +278,18 @@ def test_title_fallback_to_transcript():
     assert done["type"] == "done"
     assert done["title"] == "transcript"
     assert "transcript.txt" in done["filename"]
+
+
+# --- HTML page serving -----------------------------------------------------
+
+def test_web_html_loaded_from_file():
+    assert "<!DOCTYPE html>" in web._WEB_HTML
+    assert "yttranscript" in web._WEB_HTML
+
+
+def test_html_page_served():
+    with _Harness() as h:
+        resp = urllib.request.urlopen(f"http://127.0.0.1:{h.port}/")
+        body = resp.read().decode("utf-8")
+        assert "<!DOCTYPE html>" in body
+        assert "text/html" in resp.headers["Content-Type"]

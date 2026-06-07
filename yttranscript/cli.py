@@ -12,7 +12,7 @@ from .log import info, warn, error, Colors
 from .config import (
     CONFIG_PATH, DEFAULTS, load_config, resolve_value, ensure_config_dir, hidden_keys,
 )
-from .util import is_youtube_url, TranscriptError
+from .util import is_youtube_url, is_valid_lang_code, TranscriptError
 from .ytdlp import list_channel_videos
 from .core import process_video
 from .web import run_server
@@ -207,6 +207,12 @@ def _validate_args(parser: argparse.ArgumentParser, args) -> None:
         parser.error(f"--chunk-size must be >= 1, got {args.chunk_size}")
     if args.latest is not None and args.latest < 1:
         parser.error(f"--latest must be >= 1, got {args.latest}")
+    if args.lang is not None and not is_valid_lang_code(args.lang):
+        parser.error(
+            f"{args.lang!r} is not a valid language code.\n"
+            "Expected a 2-letter code (e.g. 'es', 'en', 'fr') "
+            "or with region (e.g. 'pt-BR', 'zh-Hans')."
+        )
 
 
 def transcribe_batch(videos, args) -> None:

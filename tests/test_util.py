@@ -10,6 +10,7 @@ from yttranscript.util import (
     command_exists,
     confirm,
     is_playlist_url,
+    is_valid_lang_code,
     is_youtube_url,
     run,
     sanitize_filename,
@@ -73,6 +74,25 @@ def test_playlist_url_detected(url):
 ])
 def test_playlist_url_rejected(url):
     assert not is_playlist_url(url)
+
+
+# --- is_valid_lang_code ---------------------------------------------------
+
+@pytest.mark.parametrize("lang", [
+    "es", "en", "fr", "de", "ja", "zh", "ar", "ru", "pt",
+    "eng", "spa", "fra",
+    "pt-BR", "en-US", "zh-Hans", "es-MX", "zh-CN",
+])
+def test_valid_lang_codes(lang):
+    assert is_valid_lang_code(lang)
+
+
+@pytest.mark.parametrize("lang", [
+    "español", "english", "xyz123", "e", "", "123", "español",
+    "spanish", "a" * 20, "ES!", None,
+])
+def test_invalid_lang_codes(lang):
+    assert not is_valid_lang_code(lang)
 
 
 # --- TranscriptError ------------------------------------------------------

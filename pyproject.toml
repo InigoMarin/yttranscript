@@ -47,6 +47,9 @@ Homepage = "https://github.com/InigoMarin/yttranscript"
 [tool.setuptools.packages.find]
 include = ["yttranscript*"]
 
+[tool.setuptools.package-data]
+yttranscript = ["*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

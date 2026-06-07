@@ -18,10 +18,6 @@ class TranscriptError(Exception):
     """
 
 
-# Permissive YouTube URL pattern. Accepts watch / youtu.be / shorts / embed /
-# live / playlist / channel / user / c/ / @handle variants. yt-dlp will do the
-# final heavy validation; this is just a first-line guard against garbage input
-# and against passing arbitrary URLs to subprocesses.
 _YOUTUBE_URL_RE = re.compile(
     r"^https?://"
     r"(?:[a-z0-9-]+\.)*"
@@ -33,6 +29,9 @@ _YOUTUBE_URL_RE = re.compile(
 _PLAYLIST_RE = re.compile(r"[?&]list=", re.IGNORECASE)
 
 
+_LANG_RE = re.compile(r"^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$")
+
+
 def is_youtube_url(url: str | None) -> bool:
     """Return True if `url` looks like a YouTube URL."""
     return bool(url) and bool(_YOUTUBE_URL_RE.match(url))
@@ -41,6 +40,15 @@ def is_youtube_url(url: str | None) -> bool:
 def is_playlist_url(url: str | None) -> bool:
     """Return True if `url` is a YouTube playlist URL (not a single video)."""
     return is_youtube_url(url) and bool(_PLAYLIST_RE.search(url or ""))
+
+
+def is_valid_lang_code(lang: str | None) -> bool:
+    """Return True if `lang` looks like a valid language code.
+
+    Accepts 2-3 letter codes (e.g. 'es', 'en', 'ja') optionally followed by
+    a region or script suffix (e.g. 'pt-BR', 'zh-Hans', 'en-US').
+    """
+    return bool(lang) and bool(_LANG_RE.match(lang))
 
 
 def run(
