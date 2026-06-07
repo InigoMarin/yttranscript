@@ -428,17 +428,21 @@ def test_main_batch_stdout_allowed(monkeypatch):
     assert all(c.kwargs["stdout_mode"] is True for c in mock_pv.call_args_list)
 
 
-def test_main_batch_output_rejected(monkeypatch):
+def test_main_batch_output_as_prefix(monkeypatch):
     mock_list = MagicMock(return_value=VIDEOS)
+    mock_pv = MagicMock()
     monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
     monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
     monkeypatch.setattr("sys.argv", [
         "yttranscript", "https://youtube.com/@chan", "--latest", "3",
         "--transcribe", "--output", "name",
     ])
-    with pytest.raises(SystemExit) as exc:
-        main()
-    assert exc.value.code == 2
+    main()
+    assert mock_pv.call_count == 3
+    outputs = [c.kwargs["output"] for c in mock_pv.call_args_list]
+    assert outputs == ["name_First Video", "name_Second Video", "name_Third Video"]
 
 
 def test_main_batch_list_subs_rejected(monkeypatch):

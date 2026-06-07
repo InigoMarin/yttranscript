@@ -12,7 +12,7 @@ from .log import info, warn, error, Colors
 from .config import (
     CONFIG_PATH, DEFAULTS, load_config, resolve_value, ensure_config_dir, hidden_keys,
 )
-from .util import is_youtube_url, is_valid_lang_code, TranscriptError
+from .util import is_youtube_url, is_valid_lang_code, sanitize_filename, TranscriptError
 from .ytdlp import list_channel_videos
 from .core import process_video
 from .web import run_server
@@ -240,7 +240,7 @@ def transcribe_batch(videos, args) -> None:
         try:
             process_video(
                 url=video_url,
-                output=None,
+                output=f"{args.output}_{sanitize_filename(title)}" if args.output else None,
                 fmt=fmt,
                 lang=lang,
                 list_only=False,
@@ -308,8 +308,6 @@ def main() -> None:
         videos = list_channel_videos(args.url, args.latest)
         if not args.transcribe:
             return
-        if args.output:
-            parser.error("--output cannot be used with --latest --transcribe (each video uses its own title)")
         if args.list_subs:
             parser.error("--list-subs cannot be used with --latest --transcribe")
         transcribe_batch(videos, args)

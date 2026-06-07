@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yttranscript"
-version = "2.8.1"
+version = "2.8.2"
 description = "Download YouTube video transcripts (subtitles/captions) with Whisper fallback."
 readme = "README.md"
 license = "MIT"
