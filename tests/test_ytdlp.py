@@ -211,23 +211,127 @@ def test_ensure_yt_dlp_already_installed():
         ensure_yt_dlp()  # should be a no-op
 
 
-def test_ensure_yt_dlp_install_via_pip():
-    """When yt-dlp missing and no brew/apt, install via pip."""
-    call_count = {"command_exists": 0}
+def test_ensure_yt_dlp_install_via_pip_success():
+    """pip is tried first; on success yt-dlp is available and no sudo is used."""
+    yt_dlp_checks = {"n": 0}
 
-    def fake_command_exists(name):
-        call_count["command_exists"] += 1
-        # First call (checking yt-dlp) → False, second (after install) → True
-        if call_count["command_exists"] == 1:
-            return False
-        # brew/apt checks return False, final yt-dlp check returns True
-        if name in ("brew", "apt"):
-            return False
-        return True
+    def fake_command_exists(cmd):
+        if cmd == "yt-dlp":
+            yt_dlp_checks["n"] += 1
+            return yt_dlp_checks["n"] >= 2
+        return False
 
     with patch("yttranscript.ytdlp.command_exists", side_effect=fake_command_exists), \
-         patch("yttranscript.ytdlp.run", return_value=_cp(0, "")):
+         patch("yttranscript.ytdlp.run", return_value=_cp(0, "")) as m_run, \
+         patch("yttranscript.ytdlp.confirm") as m_confirm:
         ensure_yt_dlp()
+        m_confirm.assert_not_called()
+        for call_args in m_run.call_args_list:
+            assert "sudo" not in call_args.args[0]
+
+
+def test_ensure_yt_dlp_pip_fails_falls_back_to_apt():
+    """pip install fails -> apt available -> confirm yes -> sudo apt runs."""
+    yt_dlp_checks = {"n": 0}
+
+    def fake_command_exists(cmd):
+        if cmd == "yt-dlp":
+            yt_dlp_checks["n"] += 1
+            return yt_dlp_checks["n"] >= 2
+        if cmd == "apt":
+            return True
+        return False
+
+    def fake_run(cmd, **kwargs):
+        if "pip" in cmd and "install" in cmd:
+            raise subprocess.CalledProcessError(1, cmd)
+        return _cp(0, "")
+
+    with patch("yttranscript.ytdlp.command_exists", side_effect=fake_command_exists), \
+         patch("yttranscript.ytdlp.run", side_effect=fake_run) as m_run, \
+         patch("yttranscript.ytdlp.confirm", return_value=True) as m_confirm:
+        ensure_yt_dlp()
+        m_confirm.assert_called_once()
+        assert "sudo password" in m_confirm.call_args.args[0]
+        sudo_calls = [c for c in m_run.call_args_list if "sudo" in c.args[0]]
+        assert len(sudo_calls) == 2
+
+
+def test_ensure_yt_dlp_pip_fails_apt_declined():
+    """pip fails -> apt confirm returns False -> TranscriptError, no sudo."""
+    def fake_command_exists(cmd):
+        if cmd == "apt":
+            return True
+        return False
+
+    def fake_run(cmd, **kwargs):
+        if "pip" in cmd and "install" in cmd:
+            raise subprocess.CalledProcessError(1, cmd)
+        return _cp(0, "")
+
+    with patch("yttranscript.ytdlp.command_exists", side_effect=fake_command_exists), \
+         patch("yttranscript.ytdlp.run", side_effect=fake_run) as m_run, \
+         patch("yttranscript.ytdlp.confirm", return_value=False):
+        with pytest.raises(TranscriptError):
+            ensure_yt_dlp()
+        for call_args in m_run.call_args_list:
+            assert "sudo" not in call_args.args[0]
+
+
+def test_ensure_yt_dlp_pip_unavailable_brew_install():
+    """pip not available -> brew available -> confirm yes -> brew install."""
+    yt_dlp_checks = {"n": 0}
+
+    def fake_command_exists(cmd):
+        if cmd == "yt-dlp":
+            yt_dlp_checks["n"] += 1
+            return yt_dlp_checks["n"] >= 2
+        if cmd == "brew":
+            return True
+        return False
+
+    def fake_run(cmd, **kwargs):
+        if "pip" in cmd and "--version" in cmd:
+            raise subprocess.CalledProcessError(1, cmd)
+        return _cp(0, "")
+
+    with patch("yttranscript.ytdlp.command_exists", side_effect=fake_command_exists), \
+         patch("yttranscript.ytdlp.run", side_effect=fake_run) as m_run, \
+         patch("yttranscript.ytdlp.confirm", return_value=True) as m_confirm:
+        ensure_yt_dlp()
+        m_confirm.assert_called_once()
+        brew_calls = [c for c in m_run.call_args_list
+                      if "brew" in c.args[0] and "install" in c.args[0]]
+        assert len(brew_calls) == 1
+
+
+def test_ensure_yt_dlp_pip_unavailable_no_managers():
+    """pip not available, no brew/apt -> TranscriptError with manual URL."""
+    def fake_run(cmd, **kwargs):
+        if "pip" in cmd and "--version" in cmd:
+            raise subprocess.CalledProcessError(1, cmd)
+        return _cp(0, "")
+
+    with patch("yttranscript.ytdlp.command_exists", return_value=False), \
+         patch("yttranscript.ytdlp.run", side_effect=fake_run):
+        with pytest.raises(TranscriptError) as exc_info:
+            ensure_yt_dlp()
+        assert "https://github.com/yt-dlp/yt-dlp#installation" in str(exc_info.value)
+
+
+def test_ensure_yt_dlp_install_attempted_still_missing():
+    """Installs attempted but yt-dlp still not on PATH -> TranscriptError."""
+    def fake_command_exists(cmd):
+        if cmd == "brew":
+            return True
+        return False
+
+    with patch("yttranscript.ytdlp.command_exists", side_effect=fake_command_exists), \
+         patch("yttranscript.ytdlp.run", return_value=_cp(0, "")), \
+         patch("yttranscript.ytdlp.confirm", return_value=True):
+        with pytest.raises(TranscriptError) as exc_info:
+            ensure_yt_dlp()
+        assert "Failed to install yt-dlp" in str(exc_info.value)
 
 
 # --- ensure_whisper -------------------------------------------------------

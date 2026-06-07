@@ -28,15 +28,31 @@ def ensure_yt_dlp() -> None:
 
     info("yt-dlp not found, installing...")
     try:
+        try:
+            run([sys.executable, "-m", "pip", "--version"],
+                capture=True, check=True, timeout=30)
+            pip_available = True
+        except Exception:
+            pip_available = False
+
+        if pip_available:
+            try:
+                run([sys.executable, "-m", "pip", "install", "yt-dlp"],
+                    timeout=TIMEOUT_PIP_INSTALL)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                warn("pip install failed, trying alternatives...")
+            else:
+                if command_exists("yt-dlp"):
+                    success("yt-dlp installed")
+                    return
+
         if command_exists("brew"):
-            run(["brew", "install", "yt-dlp"], timeout=TIMEOUT_PIP_INSTALL)
+            if confirm("Install yt-dlp via Homebrew?"):
+                run(["brew", "install", "yt-dlp"], timeout=TIMEOUT_PIP_INSTALL)
         elif command_exists("apt"):
-            if not confirm("Install yt-dlp via apt (requires sudo)?"):
-                raise TranscriptError("yt-dlp installation cancelled.")
-            run(["sudo", "apt", "update"], timeout=120)
-            run(["sudo", "apt", "install", "-y", "yt-dlp"], timeout=TIMEOUT_PIP_INSTALL)
-        else:
-            run([sys.executable, "-m", "pip", "install", "yt-dlp"], timeout=TIMEOUT_PIP_INSTALL)
+            if confirm("Install yt-dlp via apt? This requires your sudo password."):
+                run(["sudo", "apt", "update"], timeout=120)
+                run(["sudo", "apt", "install", "-y", "yt-dlp"], timeout=TIMEOUT_PIP_INSTALL)
     except subprocess.TimeoutExpired:
         raise TranscriptError(
             "yt-dlp installation timed out. Install manually: "
