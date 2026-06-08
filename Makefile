@@ -1,6 +1,6 @@
 .PHONY: all pkg install clean rebuild test test-cov lint help
 
-VERSION := 2.9.0
+VERSION := 2.9.1
 PKGNAME := yttranscript
 TARBALL := $(PKGNAME)-$(VERSION).tar.gz
 SRC_DIR := $(PKGNAME)-$(VERSION)
@@ -38,7 +38,7 @@ install: $(TARBALL)
 rebuild: clean install
 
 clean:
-	rm -rf $(SRC_DIR) $(TARBALL) pkg/ src/ *.pkg.tar.zst *.tar.gz
+	rm -rf yttranscript-* $(TARBALL) pkg/ src/ *.pkg.tar.zst *.tar.gz
 	@echo "Cleaned"
 
 test:
