@@ -155,8 +155,11 @@ def test_render_vtt_same_dir_no_move(tmp_path):
 
 def test_render_pdf_creates_valid_pdf(tmp_path):
     """fmt='pdf' produces a valid PDF file in output_dir."""
-    pytest.importorskip("weasyprint")
-    pytest.importorskip("markdown")
+    import shutil
+    pytest.mark.skipif(
+        not shutil.which("pandoc") or not shutil.which("typst"),
+        reason="pandoc and typst required",
+    )
     vtt = tmp_path / "video.vtt"
     vtt.write_text("WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello world\n", encoding="utf-8")
     out_dir = tmp_path / "out"

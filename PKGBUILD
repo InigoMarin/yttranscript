@@ -1,6 +1,6 @@
 # Maintainer: ima <ima@ima.com>
 pkgname=yttranscript
-pkgver=2.9.0
+pkgver=2.10.0
 pkgrel=1
 pkgdesc="Download YouTube video transcripts with Whisper fallback"
 arch=('any')
@@ -10,6 +10,8 @@ depends=('python>=3.9' 'yt-dlp' 'ffmpeg')
 makedepends=('python-build' 'python-installer' 'python-setuptools')
 optdepends=(
     'python-openai-whisper: for Whisper transcription fallback'
+    'pandoc: for PDF output'
+    'typst: for PDF output'
 )
 source=("$pkgname-$pkgver.tar.gz")
 sha256sums=('SKIP')

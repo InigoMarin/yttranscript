@@ -70,7 +70,7 @@ def _render_output(
             full_text = format_video_header(video_info) + summary + "\n"
             if fmt == "pdf":
                 out = output_dir / f"{video_info.get('title', 'transcript')}.pdf"
-                markdown_to_pdf(full_text, out)
+                markdown_to_pdf(summary, out, video_info=video_info)
             else:
                 out = output_dir / f"{video_info.get('title', 'transcript')}.txt"
                 out.write_text(full_text, encoding="utf-8")
@@ -114,9 +114,9 @@ def _render_output(
         out.write_text(vtt_to_srt(vtt_path), encoding="utf-8")
         success(f"Saved: {out}")
     elif fmt == "pdf":
-        md_text = _vtt_to_plain(vtt_path, video_info, timestamps=timestamps)
+        md_text = _vtt_to_plain(vtt_path, video_info=None, timestamps=timestamps)
         out = output_dir / f"{vtt_path.stem}.pdf"
-        markdown_to_pdf(md_text, out)
+        markdown_to_pdf(md_text, out, video_info=video_info)
         success(f"Saved: {out}")
     else:  # txt
         info("Converting to plain text (deduplicating lines)...")
