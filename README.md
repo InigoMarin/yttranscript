@@ -3,6 +3,19 @@
 CLI tool to download YouTube video transcripts (subtitles/captions) from the command line.
 Falls back to OpenAI Whisper transcription when no subtitles are available.
 
+Export to **txt**, **VTT**, **SRT**, **JSON** (chunked for RAG), **PDF**, **EPUB**, or **DOCX**.
+
+## Features
+
+- Auto-detect video language; tries manual → auto-generated subtitles → Whisper
+- Batch mode: transcribe the latest N videos from a channel (`--latest`)
+- AI summarization via external command (llama-cli, Ollama, etc.)
+- `--merge` combines all summaries from a batch into a single PDF/EPUB/DOCX
+- JSON output with configurable chunk size for RAG / vector DB ingestion
+- Local web UI with real-time SSE progress streaming
+- XDG-compliant config file (`~/.config/yttranscript/config.toml`)
+- Zero config needed — sensible defaults, auto-installs yt-dlp
+
 ## Install
 
 ### pip (any system)
@@ -15,12 +28,6 @@ With Whisper support pre-declared:
 
 ```bash
 pip install ".[whisper]"
-```
-
-With PDF export support:
-
-```bash
-pip install ".[pdf]"
 ```
 
 ### Arch Linux
@@ -57,6 +64,12 @@ yttranscript URL --format srt
 # Export as styled PDF
 yttranscript URL --format pdf
 
+# Export as EPUB e-book
+yttranscript URL --format epub
+
+# Export as DOCX (Word) document
+yttranscript URL --format docx
+
 # Include [MM:SS] timestamps in text output
 yttranscript URL --timestamps
 
@@ -76,6 +89,11 @@ yttranscript "https://youtube.com/@channel" --latest 5 --transcribe
 
 # Transcribe + summarize the latest 3
 yttranscript "https://youtube.com/@channel" --latest 3 --transcribe --summarize
+
+# Transcribe + summarize + merge into a single document
+yttranscript "https://youtube.com/@channel" --latest 5 --transcribe --summarize --format pdf --merge
+yttranscript "https://youtube.com/@channel" --latest 5 --transcribe --summarize --format epub --merge
+yttranscript "https://youtube.com/@channel" --latest 5 --transcribe --summarize --format docx --merge
 
 # Start web UI (browser interface)
 yttranscript --serve
@@ -115,7 +133,7 @@ yttranscript URL --keep-vtt --keep-audio
 | Flag | Description |
 |---|---|
 | `-o, --output` | Output filename (without extension). Default: video title. |
-| `-f, --format` | `txt` (default), `vtt`, `srt`, `json` (chunked for RAG), or `pdf` (requires `pip install ".[pdf]"`) |
+| `-f, --format` | `txt` (default), `vtt`, `srt`, `json` (chunked for RAG), `pdf` (requires Pandoc + Typst), `epub` (requires Pandoc), or `docx` (requires Pandoc) |
 | `--timestamps` | Include `[MM:SS]` timestamps in text output (config: `timestamps`) |
 | `--chunk-size` | Seconds per chunk for JSON output (default: 30, config: `chunk_size`) |
 | `--lang` | Subtitle language code (default: auto-detect, config: `lang`) |
@@ -137,6 +155,7 @@ yttranscript URL --keep-vtt --keep-audio
 | `--port` | Port for web UI (default: 8080) |
 | `--latest [N]` | List latest N videos from a channel (default: 10) |
 | `--transcribe` | With `--latest`, transcribe all listed videos (batch mode). All other options apply to each video. |
+| `--merge` | With `--latest --transcribe --format pdf/epub/docx --summarize`, generate a single merged document with all summaries. |
 | `--work-dir` | Directory for intermediate files (subtitle/audio/VTT). Default: private tempdir. |
 | `--output-dir` | Directory where the final transcript is saved. Default: current directory. |
 | `-V, --version` | Show version |
@@ -261,7 +280,7 @@ Features:
 - Paste YouTube URL and transcribe from the browser
 - Real-time progress streaming via SSE (see each subtitle attempt, Whisper progress)
 - Cancel button to abort in-progress transcription
-- Select language, format (txt/json/vtt), timestamps, summarize
+- Select language, format (txt/json/vtt/srt/epub/docx), timestamps, summarize
 - Markdown rendering for txt and summarize output (headers, bold, lists)
 - Browser notifications when transcription completes (enable via the bell icon in the header; falls back to flashing the tab title)
 - Download or copy results directly from the browser
@@ -283,7 +302,8 @@ Features:
 
 - **yt-dlp** — declared as a pip dependency (installed with `pip install .`); if missing at runtime, auto-installed via pip with brew/apt fallback
 - **openai-whisper** — only needed for Whisper fallback, prompted before install (install upfront with `pip install ".[whisper]"`)
-- **weasyprint** + **markdown** — only needed for PDF export (install upfront with `pip install ".[pdf]"`)
+- **pandoc** — required for PDF, EPUB, and DOCX export (`pacman -S pandoc` or https://pandoc.org/installing.html)
+- **typst** — additionally required for PDF export (`pacman -S typst`)
 - **ffmpeg** — required by Whisper for audio processing
 - **script** (BSD/Linux `util-linux`) — required by `--summarize` to capture command output via pseudo-terminal (not available on Windows)
 
@@ -293,7 +313,7 @@ Features:
 2. Try manual subtitles: exact lang → wildcard (e.g. `es.*`) → fallback language
 3. Fall back to auto-generated subtitles (same language chain)
 4. Last resort: download audio + transcribe with Whisper (GPU with CPU fallback)
-5. Convert VTT to clean text with Markdown header (title, URL, duration, source)
+5. Convert VTT to the chosen output format (txt, vtt, srt, json, pdf, epub, docx)
 
 Intermediate files (subtitles, audio) are written to a private temp directory by
 default (`--work-dir` to override). The final transcript is saved to the current
@@ -310,6 +330,12 @@ yttranscript "https://youtube.com/watch?v=VIDEO_ID" --lang es --format vtt
 
 # Export as SRT subtitles for a video editor / VLC
 yttranscript "https://youtube.com/watch?v=VIDEO_ID" --format srt
+
+# Export as EPUB for reading on an e-reader
+yttranscript "https://youtube.com/watch?v=VIDEO_ID" --format epub
+
+# Export as DOCX for editing in Word / Google Docs
+yttranscript "https://youtube.com/watch?v=VIDEO_ID" --format docx
 
 # Spanish video with timestamps for navigation
 yttranscript "https://youtube.com/watch?v=VIDEO_ID" --lang es --timestamps

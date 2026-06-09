@@ -175,6 +175,52 @@ def test_render_pdf_creates_valid_pdf(tmp_path):
     assert pdf_file.read_bytes()[:5] == b"%PDF-"
 
 
+# --- _render_output: epub mode -------------------------------------------
+
+@pytest.mark.skipif(
+    not __import__("shutil").which("pandoc"),
+    reason="pandoc required",
+)
+def test_render_epub_creates_valid_epub(tmp_path):
+    """fmt='epub' produces a valid EPUB file in output_dir."""
+    vtt = tmp_path / "video.vtt"
+    vtt.write_text("WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello world\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+    saved = _render_output(
+        vtt_path=vtt, video_info={"title": "video", "url": "U", "duration": 2, "whisper": False},
+        fmt="epub", stdout_mode=False, timestamps=False, chunk_size=30,
+        summarize=False, summarize_cmd=None, summarize_prompt=None,
+        summarize_timeout=300, keep_vtt=False, output_dir=out_dir,
+    )
+    epub_file = out_dir / "video.epub"
+    assert saved == (epub_file, None)
+    assert epub_file.exists()
+    assert epub_file.read_bytes()[:2] == b"PK"
+
+
+# --- _render_output: docx mode -------------------------------------------
+
+@pytest.mark.skipif(
+    not __import__("shutil").which("pandoc"),
+    reason="pandoc required",
+)
+def test_render_docx_creates_valid_docx(tmp_path):
+    """fmt='docx' produces a valid DOCX file in output_dir."""
+    vtt = tmp_path / "video.vtt"
+    vtt.write_text("WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello world\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+    saved = _render_output(
+        vtt_path=vtt, video_info={"title": "video", "url": "U", "duration": 2, "whisper": False},
+        fmt="docx", stdout_mode=False, timestamps=False, chunk_size=30,
+        summarize=False, summarize_cmd=None, summarize_prompt=None,
+        summarize_timeout=300, keep_vtt=False, output_dir=out_dir,
+    )
+    docx_file = out_dir / "video.docx"
+    assert saved == (docx_file, None)
+    assert docx_file.exists()
+    assert docx_file.read_bytes()[:2] == b"PK"
+
+
 # --- _render_output: stdout mode ------------------------------------------
 
 def test_render_stdout_txt_prints_and_no_file(tmp_path):

@@ -131,7 +131,7 @@ class TranscriptHandler(BaseHTTPRequestHandler):
             self._json_response({"error": f"Invalid language code: {lang}"})
             return
         fmt = params.get("format", ["txt"])[0]
-        if fmt not in ("txt", "json", "vtt", "srt"):
+        if fmt not in ("txt", "json", "vtt", "srt", "epub", "docx"):
             self._json_response({"error": f"Invalid format: {fmt}"})
             return
         timestamps = params.get("timestamps", ["0"])[0] == "1"
@@ -209,7 +209,10 @@ class TranscriptHandler(BaseHTTPRequestHandler):
             _transcription_slots.release()
 
         text = buf.getvalue()
-        ext = {"json": ".json", "txt": ".txt", "vtt": ".vtt", "srt": ".srt"}.get(fmt, ".txt")
+        ext = {
+            "json": ".json", "txt": ".txt", "vtt": ".vtt", "srt": ".srt",
+            "epub": ".epub", "docx": ".docx",
+        }.get(fmt, ".txt")
         filename = sanitize_filename(title) + ext
 
         try:

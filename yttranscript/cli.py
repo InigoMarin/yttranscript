@@ -16,7 +16,7 @@ from .config import (
 from .util import is_youtube_url, is_valid_lang_code, sanitize_filename, TranscriptError
 from .ytdlp import list_channel_videos
 from .core import process_video
-from .pdf import markdown_to_merged_pdf
+from .pdf import markdown_to_merged, PANDOC_FORMATS
 from .web import run_server
 
 
@@ -61,9 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-f", "--format",
-        choices=["txt", "vtt", "srt", "json", "pdf"],
+        choices=["txt", "vtt", "srt", "json", "pdf", "epub", "docx"],
         default=None,
-        help="Output format (default: txt, config: format). json = chunked for RAG. pdf = styled markdown PDF.",
+        help="Output format (default: txt, config: format). json = chunked for RAG. pdf/epub/docx = via Pandoc.",
     )
     parser.add_argument(
         "--chunk-size",
@@ -171,10 +171,10 @@ def build_parser() -> argparse.ArgumentParser:
              "All other options (--lang, --format, --summarize, ...) apply to each video.",
     )
     parser.add_argument(
-        "--merge-pdf",
+        "--merge",
         action="store_true",
-        help="With --latest --transcribe --format pdf --summarize, also generate "
-             "a single merged PDF with all summaries. Without --output, named after the channel.",
+        help="With --latest --transcribe --format pdf/epub/docx --summarize, also generate "
+             "a single merged document with all summaries. Without --output, named after the channel.",
     )
     parser.add_argument(
         "--work-dir",
@@ -221,8 +221,8 @@ def _validate_args(parser: argparse.ArgumentParser, args) -> None:
             "Expected a 2-letter code (e.g. 'es', 'en', 'fr') "
             "or with region (e.g. 'pt-BR', 'zh-Hans')."
         )
-    if args.merge_pdf and not args.transcribe:
-        parser.error("--merge-pdf requires --transcribe")
+    if args.merge and not args.transcribe:
+        parser.error("--merge requires --transcribe")
 
 
 def transcribe_batch(videos, args, channel_name: str = "") -> None:
@@ -239,6 +239,14 @@ def transcribe_batch(videos, args, channel_name: str = "") -> None:
     whisper_model = resolve_value(args.whisper_model, config, "whisper_model")
     whisper_dir = resolve_value(args.whisper_dir, config, "whisper_dir")
     whisper_device = resolve_value(args.whisper_device, config, "whisper_device")
+
+    if args.merge and fmt not in PANDOC_FORMATS:
+        from .log import error as _error
+        _error(
+            f"--merge requires --format to be one of {', '.join(sorted(PANDOC_FORMATS))}, "
+            f"got '{fmt}'"
+        )
+        sys.exit(2)
 
     total = len(videos)
     succeeded = 0
@@ -273,7 +281,7 @@ def transcribe_batch(videos, args, channel_name: str = "") -> None:
                 output_dir=args.output_dir,
             )
             succeeded += 1
-            if args.merge_pdf and result and result[1]:
+            if args.merge and result and result[1]:
                 collected_sections.append((
                     {"title": title, "url": video_url, "duration": 0},
                     result[1],
@@ -289,18 +297,19 @@ def transcribe_batch(videos, args, channel_name: str = "") -> None:
             error(f"Failed: {msg}")
             failed += 1
 
-    if args.merge_pdf and collected_sections:
+    if args.merge and collected_sections:
         output_dir = Path(args.output_dir) if args.output_dir else Path.cwd()
+        merge_ext = f".{fmt}"
         if args.output:
-            merge_name = f"{args.output}_merged.pdf"
+            merge_name = f"{args.output}_merged{merge_ext}"
         else:
-            merge_name = f"{sanitize_filename(channel_name or 'merged')}.pdf"
+            merge_name = f"{sanitize_filename(channel_name or 'merged')}{merge_ext}"
         merge_path = output_dir / merge_name
         try:
-            markdown_to_merged_pdf(collected_sections, merge_path, channel_name=channel_name)
-            info(f"Merged PDF: {merge_path}")
+            markdown_to_merged(collected_sections, merge_path, fmt=fmt, channel_name=channel_name)
+            info(f"Merged {fmt.upper()}: {merge_path}")
         except Exception as e:
-            error(f"Failed to generate merged PDF: {e}")
+            error(f"Failed to generate merged {fmt.upper()}: {e}")
 
     info(f"Done: {succeeded} transcribed, {failed} failed.")
 

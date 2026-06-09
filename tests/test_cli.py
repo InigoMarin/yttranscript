@@ -101,6 +101,18 @@ def test_parser_format_choices():
     assert args.format == "vtt"
 
 
+def test_parser_format_epub():
+    parser = build_parser()
+    args = parser.parse_args(["URL", "-f", "epub"])
+    assert args.format == "epub"
+
+
+def test_parser_format_docx():
+    parser = build_parser()
+    args = parser.parse_args(["URL", "-f", "docx"])
+    assert args.format == "docx"
+
+
 def test_parser_format_invalid_choice_exits():
     parser = build_parser()
     with pytest.raises(SystemExit):
@@ -484,3 +496,146 @@ def test_main_batch_keyboard_interrupt_breaks(monkeypatch):
     ])
     main()
     assert mock_pv.call_count == 2
+
+
+# --- --merge flag ---------------------------------------------------------
+
+def test_parser_merge_flag():
+    parser = build_parser()
+    args = parser.parse_args(["URL", "--merge"])
+    assert args.merge is True
+
+
+def test_merge_requires_transcribe(monkeypatch):
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "URL", "--merge",
+    ])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+
+
+def test_merge_rejects_txt_format(monkeypatch):
+    mock_list = MagicMock(return_value=("MyChannel", VIDEOS))
+    mock_pv = MagicMock(return_value=("title", "summary text"))
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
+    monkeypatch.setattr("yttranscript.cli.markdown_to_merged", MagicMock())
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/@chan",
+        "--latest", "3", "--transcribe", "--summarize", "--merge",
+    ])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+
+
+def test_merge_rejects_json_format(monkeypatch):
+    mock_list = MagicMock(return_value=("MyChannel", VIDEOS))
+    mock_pv = MagicMock(return_value=("title", "summary text"))
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
+    monkeypatch.setattr("yttranscript.cli.markdown_to_merged", MagicMock())
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/@chan",
+        "--latest", "3", "--transcribe", "--summarize", "--merge", "-f", "json",
+    ])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+
+
+def test_merge_accepts_epub_format(monkeypatch):
+    mock_list = MagicMock(return_value=("MyChannel", VIDEOS))
+    mock_pv = MagicMock(return_value=("title", "summary text"))
+    mock_merge = MagicMock()
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
+    monkeypatch.setattr("yttranscript.cli.markdown_to_merged", mock_merge)
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/@chan",
+        "--latest", "3", "--transcribe", "--summarize", "--merge", "-f", "epub",
+    ])
+    main()
+    mock_merge.assert_called_once()
+    assert mock_merge.call_args.kwargs["fmt"] == "epub"
+
+
+def test_merge_accepts_docx_format(monkeypatch):
+    mock_list = MagicMock(return_value=("MyChannel", VIDEOS))
+    mock_pv = MagicMock(return_value=("title", "summary text"))
+    mock_merge = MagicMock()
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
+    monkeypatch.setattr("yttranscript.cli.markdown_to_merged", mock_merge)
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/@chan",
+        "--latest", "3", "--transcribe", "--summarize", "--merge", "-f", "docx",
+    ])
+    main()
+    mock_merge.assert_called_once()
+    assert mock_merge.call_args.kwargs["fmt"] == "docx"
+
+
+def test_merge_accepts_pdf_format(monkeypatch):
+    mock_list = MagicMock(return_value=("MyChannel", VIDEOS))
+    mock_pv = MagicMock(return_value=("title", "summary text"))
+    mock_merge = MagicMock()
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
+    monkeypatch.setattr("yttranscript.cli.markdown_to_merged", mock_merge)
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/@chan",
+        "--latest", "3", "--transcribe", "--summarize", "--merge", "-f", "pdf",
+    ])
+    main()
+    mock_merge.assert_called_once()
+    assert mock_merge.call_args.kwargs["fmt"] == "pdf"
+
+
+def test_merge_naming_with_output(monkeypatch, tmp_path):
+    mock_list = MagicMock(return_value=("MyChannel", VIDEOS[:1]))
+    mock_pv = MagicMock(return_value=("title", "summary text"))
+    mock_merge = MagicMock()
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
+    monkeypatch.setattr("yttranscript.cli.markdown_to_merged", mock_merge)
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/@chan",
+        "--latest", "1", "--transcribe", "--summarize", "--merge", "-f", "epub",
+        "--output", "myseries",
+    ])
+    main()
+    merge_path = mock_merge.call_args.args[1]
+    assert merge_path.name == "myseries_merged.epub"
+
+
+def test_merge_naming_without_output(monkeypatch, tmp_path):
+    mock_list = MagicMock(return_value=("MyChannel", VIDEOS[:1]))
+    mock_pv = MagicMock(return_value=("title", "summary text"))
+    mock_merge = MagicMock()
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
+    monkeypatch.setattr("yttranscript.cli.markdown_to_merged", mock_merge)
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/@chan",
+        "--latest", "1", "--transcribe", "--summarize", "--merge", "-f", "docx",
+    ])
+    main()
+    merge_path = mock_merge.call_args.args[1]
+    assert merge_path.name == "MyChannel.docx"

@@ -22,7 +22,7 @@ from .vtt import (
 )
 from .whisper import transcribe_with_whisper
 from .summarize import summarize_text
-from .pdf import markdown_to_pdf
+from .pdf import markdown_to_pdf, markdown_to_epub, markdown_to_docx
 from .ytdlp import (
     ensure_yt_dlp,
     get_video_title,
@@ -73,6 +73,12 @@ def _render_output(
             if fmt == "pdf":
                 out = output_dir / f"{video_info.get('title', 'transcript')}.pdf"
                 markdown_to_pdf(summary, out, video_info=video_info)
+            elif fmt == "epub":
+                out = output_dir / f"{video_info.get('title', 'transcript')}.epub"
+                markdown_to_epub(summary, out, video_info=video_info)
+            elif fmt == "docx":
+                out = output_dir / f"{video_info.get('title', 'transcript')}.docx"
+                markdown_to_docx(summary, out, video_info=video_info)
             else:
                 out = output_dir / f"{video_info.get('title', 'transcript')}.txt"
                 out.write_text(full_text, encoding="utf-8")
@@ -116,6 +122,16 @@ def _render_output(
         md_text = _vtt_to_plain(vtt_path, video_info=None, timestamps=timestamps)
         out = output_dir / f"{vtt_path.stem}.pdf"
         markdown_to_pdf(md_text, out, video_info=video_info)
+        success(f"Saved: {out}")
+    elif fmt == "epub":
+        md_text = _vtt_to_plain(vtt_path, video_info=None, timestamps=timestamps)
+        out = output_dir / f"{vtt_path.stem}.epub"
+        markdown_to_epub(md_text, out, video_info=video_info)
+        success(f"Saved: {out}")
+    elif fmt == "docx":
+        md_text = _vtt_to_plain(vtt_path, video_info=None, timestamps=timestamps)
+        out = output_dir / f"{vtt_path.stem}.docx"
+        markdown_to_docx(md_text, out, video_info=video_info)
         success(f"Saved: {out}")
     else:  # txt
         info("Converting to plain text (deduplicating lines)...")
