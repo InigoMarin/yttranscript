@@ -47,10 +47,11 @@ def _render_output(
     summarize_timeout: int,
     keep_vtt: bool,
     output_dir: Path,
-) -> Optional[Path]:
+) -> Optional[tuple[Path, Optional[str]]]:
     """Render VTT to final output: summarize, stdout, or file in output_dir.
 
-    Returns the path of the saved file (file modes), or None (stdout/summarize).
+    Returns a tuple of (output_file_or_None, summary_markdown_or_None).
+    summary_markdown is populated only when summarize=True and a file is saved.
     """
     if summarize:
         if not summarize_cmd:
@@ -65,6 +66,7 @@ def _render_output(
         if stdout_mode:
             print(format_video_header(video_info), end="")
             print(summary)
+            return (None, None)
         else:
             output_dir.mkdir(parents=True, exist_ok=True)
             full_text = format_video_header(video_info) + summary + "\n"
@@ -75,7 +77,7 @@ def _render_output(
                 out = output_dir / f"{video_info.get('title', 'transcript')}.txt"
                 out.write_text(full_text, encoding="utf-8")
             success(f"Saved: {out}")
-        return None
+        return (out, summary)
 
     if stdout_mode:
         if fmt == "vtt":
@@ -87,11 +89,8 @@ def _render_output(
         else:
             vtt_to_stdout(vtt_path, video_info, timestamps=timestamps)
         vtt_path.unlink(missing_ok=True)
-        return None
+        return (None, None)
 
-    # File modes: place the output file in output_dir. Use shutil.move because
-    # the source VTT may live on a different filesystem than output_dir (e.g.
-    # work_dir under /tmp and output_dir = CWD under /home).
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if fmt == "vtt":
@@ -101,7 +100,7 @@ def _render_output(
         else:
             target = vtt_path
         success(f"Saved: {target}")
-        return target
+        return (target, None)
 
     if fmt == "json":
         info("Converting to JSON (chunked for RAG)...")
@@ -134,7 +133,7 @@ def _render_output(
     else:
         vtt_path.unlink(missing_ok=True)
 
-    return out
+    return (out, None)
 
 
 def process_video(
@@ -160,8 +159,8 @@ def process_video(
     log_callback: Optional[Callable[[str, str], None]] = None,
     work_dir: Optional[str] = None,
     output_dir: Optional[str] = None,
-) -> Optional[str]:
-    """Main processing pipeline. Returns the resolved video title (or None).
+) -> Optional[tuple[str, Optional[str]]]:
+    """Main processing pipeline. Returns (video_title, summary_markdown) or None.
 
     `work_dir`: directory for intermediate files (subtitle/audio/VTT). Defaults
         to a private TemporaryDirectory, so the user's CWD is no longer polluted
@@ -260,14 +259,14 @@ def process_video(
                     if vtt_files:
                         final_vtt = work_path / f"{video_title}.vtt"
                         vtt_files[0].rename(final_vtt)
-                        _render_output(
+                        _, summary_md = _render_output(
                             final_vtt,
                             {"title": video_title, "url": url, "duration": video_duration, "whisper": False},
                             fmt, stdout_mode, timestamps, chunk_size,
                             summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                             output_dir=final_output_dir,
                         )
-                        return video_title
+                        return (video_title, summary_md)
 
                 warn("No subtitles available.")
             else:
@@ -290,15 +289,16 @@ def process_video(
             # Post-process Whisper output
             vtt_file = work_path / f"{video_title}.vtt"
             if vtt_file.exists():
-                _render_output(
+                _, summary_md = _render_output(
                     vtt_file,
                     {"title": video_title, "url": url, "duration": video_duration, "whisper": True},
                     fmt, stdout_mode, timestamps, chunk_size,
                     summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                     output_dir=final_output_dir,
                 )
+                return (video_title, summary_md)
 
-        return video_title
+        return (video_title, None)
     finally:
         if work_ctx is not None:
             work_ctx.cleanup()

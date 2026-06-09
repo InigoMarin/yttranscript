@@ -351,20 +351,20 @@ def test_ensure_whisper_user_declines(monkeypatch):
 # --- list_channel_videos --------------------------------------------------
 
 def test_list_channel_videos_success(capsys):
-    channel_raw = "UC12345678\n"
+    channel_raw = "UC12345678|My Channel\n"
     videos_raw = "20240115|vid1|First Video\n20240114|vid2|Second Video\n"
     responses = iter([_cp(0, channel_raw), _cp(0, videos_raw)])
     with patch("yttranscript.ytdlp.run", side_effect=lambda *a, **kw: next(responses)):
         result = list_channel_videos("https://youtube.com/@chan", limit=2)
         captured = capsys.readouterr()
-        assert "UC12345678" in captured.out
+        assert "My Channel" in captured.out
         assert "First Video" in captured.out
-    assert result == [("2024-01-15", "vid1", "First Video"),
-                      ("2024-01-14", "vid2", "Second Video")]
+    assert result == ("My Channel", [("2024-01-15", "vid1", "First Video"),
+                                     ("2024-01-14", "vid2", "Second Video")])
 
 
 def test_list_channel_videos_invalid_id_exits():
-    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "NOTUC\n")):
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "NOTUC|Bad\n")):
         with pytest.raises(TranscriptError):
             list_channel_videos("u")
 
@@ -378,17 +378,18 @@ def test_list_channel_videos_resolve_failure_exits():
 # --- resolve_channel_videos ------------------------------------------------
 
 def test_resolve_channel_videos_success():
-    channel_raw = "UC12345678\n"
+    channel_raw = "UC12345678|My Channel\n"
     videos_raw = "20240115|vid1|First Video\n20240114|vid2|Second Video\n"
     responses = iter([_cp(0, channel_raw), _cp(0, videos_raw)])
     with patch("yttranscript.ytdlp.run", side_effect=lambda *a, **kw: next(responses)):
-        videos = resolve_channel_videos("https://youtube.com/@chan", limit=2)
+        channel_name, videos = resolve_channel_videos("https://youtube.com/@chan", limit=2)
+    assert channel_name == "My Channel"
     assert videos == [("2024-01-15", "vid1", "First Video"),
                       ("2024-01-14", "vid2", "Second Video")]
 
 
 def test_resolve_channel_videos_invalid_id_exits():
-    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "NOTUC\n")):
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "NOTUC|Bad\n")):
         with pytest.raises(TranscriptError):
             resolve_channel_videos("u")
 
@@ -400,23 +401,24 @@ def test_resolve_channel_videos_resolve_failure_exits():
 
 
 def test_resolve_channel_videos_fetch_failure_exits():
-    responses = iter([_cp(0, "UC12345678\n"), _cp(1, "")])
+    responses = iter([_cp(0, "UC12345678|Chan\n"), _cp(1, "")])
     with patch("yttranscript.ytdlp.run", side_effect=lambda *a, **kw: next(responses)):
         with pytest.raises(TranscriptError):
             resolve_channel_videos("u")
 
 
 def test_resolve_channel_videos_skips_malformed_lines():
-    channel_raw = "UC12345678\n"
+    channel_raw = "UC12345678|My Channel\n"
     videos_raw = "badline\n20240115|vid1|First Video\n"
     responses = iter([_cp(0, channel_raw), _cp(0, videos_raw)])
     with patch("yttranscript.ytdlp.run", side_effect=lambda *a, **kw: next(responses)):
-        videos = resolve_channel_videos("u")
+        channel_name, videos = resolve_channel_videos("u")
+    assert channel_name == "My Channel"
     assert videos == [("2024-01-15", "vid1", "First Video")]
 
 
 def test_resolve_channel_videos_empty_fetch_exits():
-    responses = iter([_cp(0, "UC12345678\n"), _cp(0, "\n")])
+    responses = iter([_cp(0, "UC12345678|Chan\n"), _cp(0, "\n")])
     with patch("yttranscript.ytdlp.run", side_effect=lambda *a, **kw: next(responses)):
         with pytest.raises(TranscriptError):
             resolve_channel_videos("u")

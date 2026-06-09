@@ -45,9 +45,9 @@ def test_render_txt_writes_to_output_dir(tmp_path):
         summarize=False, summarize_cmd=None, summarize_prompt=None,
         summarize_timeout=300, keep_vtt=False, output_dir=out_dir,
     )
-    assert saved == out_dir / "video.txt"
-    assert saved.exists()
-    assert "Hello" in saved.read_text()
+    assert saved == (out_dir / "video.txt", None)
+    assert saved[0].exists()
+    assert "Hello" in saved[0].read_text()
     assert not vtt.exists(), "source VTT should be consumed"
     assert not (work / "video.txt").exists()
 
@@ -64,7 +64,7 @@ def test_render_txt_with_timestamps(tmp_path):
         summarize=False, summarize_cmd=None, summarize_prompt=None,
         summarize_timeout=300, keep_vtt=False, output_dir=out_dir,
     )
-    content = saved.read_text()
+    content = saved[0].read_text()
     assert "[00:00]" in content
     assert "[00:02]" in content
 
@@ -98,8 +98,8 @@ def test_render_json_writes_to_output_dir(tmp_path):
         summarize=False, summarize_cmd=None, summarize_prompt=None,
         summarize_timeout=300, keep_vtt=False, output_dir=out_dir,
     )
-    assert saved == out_dir / "v.json"
-    data = json.loads(saved.read_text())
+    assert saved == (out_dir / "v.json", None)
+    data = json.loads(saved[0].read_text())
     assert data["title"] == "v"
     assert data["source"] == "subtitles"
 
@@ -115,7 +115,7 @@ def test_render_json_whisper_source(tmp_path):
         summarize=False, summarize_cmd=None, summarize_prompt=None,
         summarize_timeout=300, keep_vtt=False, output_dir=out_dir,
     )
-    data = json.loads(saved.read_text())
+    data = json.loads(saved[0].read_text())
     assert data["source"] == "whisper"
 
 
@@ -132,8 +132,8 @@ def test_render_vtt_moves_to_output_dir(tmp_path):
         summarize=False, summarize_cmd=None, summarize_prompt=None,
         summarize_timeout=300, keep_vtt=False, output_dir=out_dir,
     )
-    assert saved == out_dir / "video.vtt"
-    assert saved.exists()
+    assert saved == (out_dir / "video.vtt", None)
+    assert saved[0].exists()
     assert not vtt.exists()
 
 
@@ -148,7 +148,7 @@ def test_render_vtt_same_dir_no_move(tmp_path):
         summarize=False, summarize_cmd=None, summarize_prompt=None,
         summarize_timeout=300, keep_vtt=False, output_dir=out_dir,
     )
-    assert saved == vtt  # same path
+    assert saved == (vtt, None)  # same path
 
 
 # --- _render_output: pdf mode --------------------------------------------
@@ -170,7 +170,7 @@ def test_render_pdf_creates_valid_pdf(tmp_path):
         summarize_timeout=300, keep_vtt=False, output_dir=out_dir,
     )
     pdf_file = out_dir / "video.pdf"
-    assert saved == pdf_file
+    assert saved == (pdf_file, None)
     assert pdf_file.exists()
     assert pdf_file.read_bytes()[:5] == b"%PDF-"
 
@@ -193,7 +193,7 @@ def test_render_stdout_txt_prints_and_no_file(tmp_path):
     finally:
         captured = sys.stdout.getvalue()
         sys.stdout = old
-    assert result is None
+    assert result == (None, None)
     assert not out_dir.exists()
     assert "Hi" in captured
 
@@ -316,7 +316,7 @@ def test_process_video_subtitle_success(mock_pipeline, tmp_path):
     mock_pipeline["try_sub"].side_effect = fake_sub
 
     result = process_video(VTT_URL, output_dir=str(out), work_dir=str(work))
-    assert result == "test_video"
+    assert result == ("test_video", None)
     assert (out / "test_video.txt").exists()
     # Whisper was NOT called
     mock_pipeline["whisper"].assert_not_called()
@@ -335,7 +335,7 @@ def test_process_video_subtitle_success_explicit_output(mock_pipeline, tmp_path)
 
     result = process_video(VTT_URL, output="my_custom_name",
                            output_dir=str(out), work_dir=str(work))
-    assert result == "my_custom_name"
+    assert result == ("my_custom_name", None)
     assert (out / "my_custom_name.txt").exists()
 
 
@@ -354,7 +354,7 @@ def test_process_video_subtitle_manual_first(mock_pipeline, tmp_path):
     mock_pipeline["try_sub"].side_effect = fake_sub
 
     result = process_video(VTT_URL, work_dir=str(work), output_dir=str(tmp_path))
-    assert result == "test_video"
+    assert result == ("test_video", None)
     # First call was manual (use_auto=False)
     assert call_log[0][1] is False
 
@@ -374,7 +374,7 @@ def test_process_video_subtitle_auto_fallback(mock_pipeline, tmp_path):
     mock_pipeline["try_sub"].side_effect = fake_sub
 
     result = process_video(VTT_URL, work_dir=str(work), output_dir=str(tmp_path))
-    assert result == "test_video"
+    assert result == ("test_video", None)
     assert False in call_log  # manual was tried
     assert True in call_log   # auto was tried
 
@@ -393,7 +393,7 @@ def test_process_video_whisper_fallback_success(mock_pipeline, tmp_path):
     mock_pipeline["whisper"].side_effect = fake_whisper
 
     result = process_video(VTT_URL, output_dir=str(out), work_dir=str(work))
-    assert result == "test_video"
+    assert result == ("test_video", None)
     assert (out / "test_video.txt").exists()
     mock_pipeline["whisper"].assert_called_once()
 
@@ -420,7 +420,7 @@ def test_process_video_force_whisper(mock_pipeline, tmp_path):
 
     result = process_video(VTT_URL, force_whisper=True,
                            output_dir=str(out), work_dir=str(work))
-    assert result == "test_video"
+    assert result == ("test_video", None)
     mock_pipeline["try_sub"].assert_not_called()
     mock_pipeline["whisper"].assert_called_once()
 
@@ -476,7 +476,7 @@ def test_process_video_default_output_dir_is_cwd(mock_pipeline, isolated_cwd):
     mock_pipeline["try_sub"].side_effect = fake_sub
 
     result = process_video(VTT_URL, work_dir=str(work))
-    assert result == "test_video"
+    assert result == ("test_video", None)
     assert (isolated_cwd / "test_video.txt").exists()
 
 
@@ -555,7 +555,7 @@ def test_process_video_stdout_mode(mock_pipeline, tmp_path):
         captured = sys.stdout.getvalue()
         sys.stdout = old
 
-    assert result == "test_video"
+    assert result == ("test_video", None)
     assert "Hello world" in captured
     assert not (tmp_path / "test_video.txt").exists()
 

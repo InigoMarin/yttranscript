@@ -107,26 +107,29 @@ def list_subs(url: str) -> None:
     run(["yt-dlp", "--list-subs", url], check=False, timeout=TIMEOUT_LIST_SUBS)
 
 
-def resolve_channel_videos(url: str, limit: int = 10) -> list[tuple[str, str, str]]:
+def resolve_channel_videos(url: str, limit: int = 10) -> tuple[str, list[tuple[str, str, str]]]:
     """Resolve a channel URL and return its latest videos.
 
-    Returns a list of (date_str, video_id, title) tuples.
+    Returns a tuple of (channel_name, [(date_str, video_id, title), ...]).
     """
     info(f"Resolving channel from: {url}")
     result = run(
-        ["yt-dlp", "--print", "%(channel_id)s", "--playlist-items", "1", url],
+        ["yt-dlp", "--print", "%(channel_id)s|%(channel)s", "--playlist-items", "1", url],
         capture=True, check=False, quiet=True, timeout=TIMEOUT_METADATA,
     )
     if result.returncode != 0 or not result.stdout.strip():
         raise TranscriptError("Could not resolve channel ID from the provided URL.")
 
-    channel_id = result.stdout.strip().splitlines()[0]
+    first_line = result.stdout.strip().splitlines()[0]
+    ch_parts = first_line.split("|", 1)
+    channel_id = ch_parts[0]
+    channel_name = ch_parts[1] if len(ch_parts) > 1 else channel_id
     if not channel_id.startswith("UC"):
         raise TranscriptError(f"Invalid channel ID: {channel_id}")
 
     uploads_playlist = "UU" + channel_id[2:]
     playlist_url = f"https://www.youtube.com/playlist?list={uploads_playlist}"
-    success(f"Channel: {channel_id}")
+    success(f"Channel: {channel_name} ({channel_id})")
 
     info(f"Fetching latest {limit} videos...")
     result = run(
@@ -146,20 +149,20 @@ def resolve_channel_videos(url: str, limit: int = 10) -> list[tuple[str, str, st
         date_raw, vid, title = parts
         date_str = f"{date_raw[:4]}-{date_raw[4:6]}-{date_raw[6:8]}" if len(date_raw) == 8 and date_raw != "NA" else "Unknown"
         videos.append((date_str, vid, title))
-    return videos
+    return channel_name, videos
 
 
-def list_channel_videos(url: str, limit: int = 10) -> list[tuple[str, str, str]]:
+def list_channel_videos(url: str, limit: int = 10) -> tuple[str, list[tuple[str, str, str]]]:
     """List latest videos from a YouTube channel.
 
-    Returns the list of (date_str, video_id, title) tuples (also printed).
+    Returns a tuple of (channel_name, [(date_str, video_id, title), ...]).
     """
-    videos = resolve_channel_videos(url, limit)
+    channel_name, videos = resolve_channel_videos(url, limit)
     info("")
     for date_str, vid, title in videos:
         info(f"Date: {date_str} | Title: {title} | URL: https://www.youtube.com/watch?v={vid}")
     info("")
-    return videos
+    return channel_name, videos
 
 
 def get_video_info(url: str) -> dict:

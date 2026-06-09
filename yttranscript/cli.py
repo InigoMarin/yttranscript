@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from pathlib import Path
 
 from . import log
 from ._version import __version__
@@ -15,6 +16,7 @@ from .config import (
 from .util import is_youtube_url, is_valid_lang_code, sanitize_filename, TranscriptError
 from .ytdlp import list_channel_videos
 from .core import process_video
+from .pdf import markdown_to_merged_pdf
 from .web import run_server
 
 
@@ -169,6 +171,12 @@ def build_parser() -> argparse.ArgumentParser:
              "All other options (--lang, --format, --summarize, ...) apply to each video.",
     )
     parser.add_argument(
+        "--merge-pdf",
+        action="store_true",
+        help="With --latest --transcribe --format pdf --summarize, also generate "
+             "a single merged PDF with all summaries. Without --output, named after the channel.",
+    )
+    parser.add_argument(
         "--work-dir",
         default=None,
         help="Directory for intermediate files (subtitle/audio/VTT). Default: private tempdir.",
@@ -213,9 +221,11 @@ def _validate_args(parser: argparse.ArgumentParser, args) -> None:
             "Expected a 2-letter code (e.g. 'es', 'en', 'fr') "
             "or with region (e.g. 'pt-BR', 'zh-Hans')."
         )
+    if args.merge_pdf and not args.transcribe:
+        parser.error("--merge-pdf requires --transcribe")
 
 
-def transcribe_batch(videos, args) -> None:
+def transcribe_batch(videos, args, channel_name: str = "") -> None:
     """Transcribe a batch of videos listed by --latest --transcribe."""
     config = load_config()
     lang = resolve_value(args.lang, config, "lang")
@@ -233,12 +243,13 @@ def transcribe_batch(videos, args) -> None:
     total = len(videos)
     succeeded = 0
     failed = 0
+    collected_sections: list[tuple[dict, str]] = []
 
     for i, (_date_str, video_id, title) in enumerate(videos, 1):
         video_url = f"https://www.youtube.com/watch?v={video_id}"
         info(f"[{i}/{total}] Transcribing: {title!r}")
         try:
-            process_video(
+            result = process_video(
                 url=video_url,
                 output=f"{args.output}_{sanitize_filename(title)}" if args.output else None,
                 fmt=fmt,
@@ -262,6 +273,11 @@ def transcribe_batch(videos, args) -> None:
                 output_dir=args.output_dir,
             )
             succeeded += 1
+            if args.merge_pdf and result and result[1]:
+                collected_sections.append((
+                    {"title": title, "url": video_url, "duration": 0},
+                    result[1],
+                ))
         except KeyboardInterrupt:
             warn("Batch interrupted by user.")
             break
@@ -272,6 +288,19 @@ def transcribe_batch(videos, args) -> None:
             msg = str(e) if str(e) else type(e).__name__
             error(f"Failed: {msg}")
             failed += 1
+
+    if args.merge_pdf and collected_sections:
+        output_dir = Path(args.output_dir) if args.output_dir else Path.cwd()
+        if args.output:
+            merge_name = f"{args.output}_merged.pdf"
+        else:
+            merge_name = f"{sanitize_filename(channel_name or 'merged')}.pdf"
+        merge_path = output_dir / merge_name
+        try:
+            markdown_to_merged_pdf(collected_sections, merge_path, channel_name=channel_name)
+            info(f"Merged PDF: {merge_path}")
+        except Exception as e:
+            error(f"Failed to generate merged PDF: {e}")
 
     info(f"Done: {succeeded} transcribed, {failed} failed.")
 
@@ -305,12 +334,12 @@ def main() -> None:
         parser.error(f"not a YouTube URL: {args.url!r}")
 
     if args.latest is not None:
-        videos = list_channel_videos(args.url, args.latest)
+        channel_name, videos = list_channel_videos(args.url, args.latest)
         if not args.transcribe:
             return
         if args.list_subs:
             parser.error("--list-subs cannot be used with --latest --transcribe")
-        transcribe_batch(videos, args)
+        transcribe_batch(videos, args, channel_name=channel_name)
         return
 
     config = load_config()
