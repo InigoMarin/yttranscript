@@ -112,7 +112,7 @@
     <input type="text" id="url" placeholder="Paste YouTube URL..." />
     <div class="row">
       <label>Lang <input type="text" id="lang" list="lang-codes" placeholder="Auto" class="lang-input"><datalist id="lang-codes"><option value="en"><option value="es"><option value="fr"><option value="de"><option value="pt"><option value="it"><option value="ja"><option value="zh"><option value="ko"><option value="ar"><option value="ru"><option value="nl"><option value="pl"><option value="tr"></datalist></label>
-      <label>Format <select id="format"><option value="txt">txt</option><option value="json">json</option><option value="vtt">vtt</option><option value="srt">srt</option><option value="epub">epub</option><option value="docx">docx</option></select></label>
+      <label>Format <select id="format"><option value="txt">txt</option><option value="json">json</option><option value="vtt">vtt</option><option value="srt">srt</option><option value="pdf">pdf</option><option value="epub">epub</option><option value="docx">docx</option></select></label>
       <label><input type="checkbox" id="timestamps"> Timestamps</label>
       <label><input type="checkbox" id="summarize"> Summarize</label>
       <input type="text" id="filename" placeholder="Save as (auto)" class="lang-input" style="width:9rem;" aria-label="Save as filename">
@@ -334,8 +334,8 @@ function showStats(text) {
   const dur = durMatch ? durMatch[1].trim() : '';
   const parts = [];
   if (dur) parts.push('<span>\u23F1\uFE0F ' + dur + '</span>');
-  parts.push('<span>\uD83D\uDCDD ' + words.toLocaleString() + ' palabras</span>');
-  parts.push('<span>\uD83D\uDCD6 ' + minutes + ' min de lectura</span>');
+  parts.push('<span>\uD83D\uDCDD ' + words.toLocaleString() + ' words</span>');
+  parts.push('<span>\uD83D\uDCD6 ' + minutes + ' min read</span>');
   vcStats.innerHTML = parts.join('');
   vcStats.style.display = 'flex';
 }
@@ -464,20 +464,28 @@ async function run() {
         if (data.type === 'done') {
           status.innerHTML = '<span class="ok">✓ Done</span>';
           outputCard.style.display = 'block';
-          lastResult = { text: data.text, filename: data.filename || 'transcript.txt', url: url };
-          if ((fmt === 'txt' || summarize) && fmt !== 'json' && fmt !== 'vtt' && fmt !== 'srt') {
+          lastResult = { text: data.text || '', filename: data.filename || 'transcript.txt', url: url };
+          if (data.download) {
+            result.className = 'md';
+            const customFn = document.getElementById('filename').value.trim();
+            const dlFn = customFn || data.filename;
+            result.innerHTML = '<p style="margin:1rem 0"><a href="' + escapeHtml(data.download) + '" download="' + escapeHtml(dlFn) + '" style="display:inline-block;padding:0.75rem 2rem;border-radius:8px;background:var(--accent);color:white;text-decoration:none;font-weight:600;">\u2B07\uFE0F Download ' + escapeHtml(dlFn) + '</a></p>';
+            dlRow.style.display = 'flex';
+            lastResult.downloadUrl = data.download;
+          } else if ((fmt === 'txt' || summarize) && fmt !== 'json' && fmt !== 'vtt' && fmt !== 'srt') {
             result.className = 'md';
             result.innerHTML = renderMarkdown(data.text);
+            dlRow.style.display = 'flex';
           } else {
             result.className = 'plain';
             result.textContent = data.text;
+            dlRow.style.display = 'flex';
           }
           if (requestedLang) {
             document.getElementById('lang-badge-text').textContent = requestedLang;
             document.getElementById('lang-badge').style.display = 'block';
           }
-          showStats(data.text);
-          dlRow.style.display = 'flex';
+          showStats(data.text || '');
           notifyDone(data.title, url);
         } else if (data.type === 'error') {
           setStatus(data.message, 'error');
@@ -525,6 +533,14 @@ async function copyText() {
 }
 function downloadFile() {
   if (!lastResult) return;
+  if (lastResult.downloadUrl) {
+    const a = document.createElement('a');
+    a.href = lastResult.downloadUrl;
+    const customFn = document.getElementById('filename').value.trim();
+    a.download = customFn || lastResult.filename;
+    a.click();
+    return;
+  }
   const ext = lastResult.filename.split('.').pop();
   const mime = ext === 'json' ? 'application/json' : ext === 'vtt' ? 'text/vtt' : 'text/plain';
   const blob = new Blob([lastResult.text], { type: mime + ';charset=utf-8' });
