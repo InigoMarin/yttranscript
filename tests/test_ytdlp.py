@@ -16,6 +16,7 @@ from yttranscript.ytdlp import (
     ensure_whisper,
     get_lang_variants,
     get_video_info,
+    get_video_metadata,
     get_video_title,
     list_channel_videos,
     list_subs,
@@ -33,11 +34,11 @@ def _cp(returncode=0, stdout="", stderr=""):
 # --- get_lang_variants (pure logic) ---------------------------------------
 
 @pytest.mark.parametrize("lang, expected", [
-    ("es", ["es", "es.*"]),
-    ("es-MX", ["es-MX", "es", "es.*"]),
-    ("en-US", ["en-US", "en", "en.*"]),
-    ("pt", ["pt", "pt.*"]),
-    ("de", ["de", "de.*"]),
+    ("es", ["es.*", "es"]),
+    ("es-MX", ["es.*", "es-MX", "es"]),
+    ("en-US", ["en.*", "en-US", "en"]),
+    ("pt", ["pt.*", "pt"]),
+    ("de", ["de.*", "de"]),
 ])
 def test_get_lang_variants(lang, expected):
     assert get_lang_variants(lang) == expected
@@ -132,6 +133,65 @@ def test_detect_language_failure_returns_none():
         assert detect_video_language("u") is None
 
 
+# --- get_video_metadata ---------------------------------------------------
+
+def test_get_video_metadata_success():
+    import json as _json
+    raw = _json.dumps({"title": "My Video", "duration": 120.5,
+                       "filesize_approx": 5000000, "language": "en-US"})
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, raw)):
+        meta = get_video_metadata("u")
+        assert meta["title"] == "My Video"
+        assert meta["sanitized_title"] == "My Video"
+        assert meta["duration"] == 120
+        assert meta["size"] == 5000000
+        assert meta["language"] == "en"
+
+
+def test_get_video_metadata_failure():
+    with patch("yttranscript.ytdlp.run", return_value=_cp(1, "")):
+        meta = get_video_metadata("u")
+        assert meta["title"] == "unknown"
+        assert meta["duration"] == 0
+        assert meta["language"] is None
+
+
+def test_get_video_metadata_na_language():
+    import json as _json
+    raw = _json.dumps({"title": "T", "duration": 0, "language": "NA"})
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, raw)):
+        meta = get_video_metadata("u")
+        assert meta["language"] is None
+
+
+def test_get_video_metadata_invalid_json():
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "not json")):
+        meta = get_video_metadata("u")
+        assert meta["title"] == "unknown"
+
+
+def test_get_video_metadata_uses_metadata_timeout():
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "{}")) as m:
+        get_video_metadata("u")
+        assert m.call_args.kwargs.get("timeout") == TIMEOUT_METADATA
+
+
+def test_get_video_metadata_sanitizes_title():
+    import json as _json
+    raw = _json.dumps({"title": "a/b:c?d", "duration": 0, "language": "en"})
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, raw)):
+        meta = get_video_metadata("u")
+        assert meta["sanitized_title"] == "a-b-c-d"
+
+
+def test_get_video_metadata_no_language():
+    import json as _json
+    raw = _json.dumps({"title": "T", "duration": 60})
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, raw)):
+        meta = get_video_metadata("u")
+        assert meta["language"] is None
+
+
 # --- try_download_subtitle ------------------------------------------------
 
 def test_try_download_subtitle_success(tmp_path):
@@ -183,6 +243,15 @@ def test_try_download_subtitle_manual_flag_adds_write_sub(tmp_path):
         cmd = m.call_args.args[0]
         assert "--write-sub" in cmd
         assert "--write-auto-sub" not in cmd
+
+
+def test_try_download_subtitle_both_flags(tmp_path):
+    prefix = str(tmp_path / "t")
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "")) as m:
+        try_download_subtitle("u", prefix, "en", try_both=True, work_dir=tmp_path)
+        cmd = m.call_args.args[0]
+        assert "--write-sub" in cmd
+        assert "--write-auto-sub" in cmd
 
 
 def test_try_download_subtitle_cwd_fallback(tmp_path, monkeypatch):

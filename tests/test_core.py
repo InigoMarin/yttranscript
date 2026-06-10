@@ -306,7 +306,7 @@ SAMPLE_VTT_CONTENT = "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello world\n"
 
 def _sub_success_side_effect(work_path, prefix="transcript_temp"):
     """Return a side_effect for try_download_subtitle that creates a VTT file."""
-    def side_effect(url, output_prefix, lang, use_auto, work_dir=None):
+    def side_effect(url, output_prefix, lang, use_auto=False, work_dir=None, **kwargs):
         vtt = Path(work_dir or work_path) / f"{prefix}.{lang}.vtt"
         vtt.write_text(SAMPLE_VTT_CONTENT, encoding="utf-8")
         return True
@@ -318,19 +318,20 @@ def mock_pipeline():
     """Mock all external deps of process_video. Returns a dict of mocks."""
     mocks = {}
     mocks["ensure_yt_dlp"] = patch("yttranscript.core.ensure_yt_dlp")
-    mocks["detect_lang"] = patch("yttranscript.core.detect_video_language")
-    mocks["get_title"] = patch("yttranscript.core.get_video_title")
-    mocks["get_info"] = patch("yttranscript.core.get_video_info")
+    mocks["get_metadata"] = patch("yttranscript.core.get_video_metadata")
     mocks["try_sub"] = patch("yttranscript.core.try_download_subtitle")
     mocks["whisper"] = patch("yttranscript.core.transcribe_with_whisper")
     mocks["list_subs"] = patch("yttranscript.core.list_subs")
 
     started = {k: v.start() for k, v in mocks.items()}
-    # Sensible defaults
     started["ensure_yt_dlp"].return_value = None
-    started["detect_lang"].return_value = "en"
-    started["get_title"].return_value = "test_video"
-    started["get_info"].return_value = {"duration": 60, "size": 1000000, "title": "T"}
+    started["get_metadata"].return_value = {
+        "title": "T",
+        "sanitized_title": "test_video",
+        "duration": 60,
+        "size": 1000000,
+        "language": "en",
+    }
     started["try_sub"].return_value = False
     started["whisper"].return_value = False
     started["list_subs"].return_value = None
@@ -354,8 +355,7 @@ def test_process_video_subtitle_success(mock_pipeline, tmp_path):
     work = tmp_path / "work"
     out = tmp_path / "out"
 
-    def fake_sub(url, prefix, lang, use_auto, work_dir=None):
-        Path(work_dir).glob  # ensure it's a Path
+    def fake_sub(url, prefix, lang, use_auto=False, work_dir=None, **kwargs):
         (Path(work_dir) / "transcript_temp.en.vtt").write_text(SAMPLE_VTT_CONTENT)
         return True
 
@@ -373,7 +373,7 @@ def test_process_video_subtitle_success_explicit_output(mock_pipeline, tmp_path)
     work = tmp_path / "work"
     out = tmp_path / "out"
 
-    def fake_sub(url, prefix, lang, use_auto, work_dir=None):
+    def fake_sub(url, prefix, lang, use_auto=False, work_dir=None, **kwargs):
         (Path(work_dir) / "transcript_temp.en.vtt").write_text(SAMPLE_VTT_CONTENT)
         return True
 
@@ -385,14 +385,30 @@ def test_process_video_subtitle_success_explicit_output(mock_pipeline, tmp_path)
     assert (out / "my_custom_name.txt").exists()
 
 
-def test_process_video_subtitle_manual_first(mock_pipeline, tmp_path):
-    """Manual subs are tried before auto subs."""
+def test_process_video_subtitle_uses_combined_mode(mock_pipeline, tmp_path):
+    """Subtitles are downloaded with try_both=True (combined manual+auto in one call)."""
     work = tmp_path / "work"
-    call_log = []
 
-    def fake_sub(url, prefix, lang, use_auto, work_dir=None):
-        call_log.append((lang, use_auto))
-        if not use_auto:
+    def fake_sub(url, prefix, lang, use_auto=False, work_dir=None, **kwargs):
+        (Path(work_dir) / "transcript_temp.en.vtt").write_text(SAMPLE_VTT_CONTENT)
+        return True
+
+    mock_pipeline["try_sub"].side_effect = fake_sub
+
+    result = process_video(VTT_URL, work_dir=str(work), output_dir=str(tmp_path))
+    assert result == ("test_video", None)
+    call_kwargs = mock_pipeline["try_sub"].call_args.kwargs
+    assert call_kwargs.get("try_both") is True
+
+
+def test_process_video_subtitle_tries_multiple_variants(mock_pipeline, tmp_path):
+    """When first variant fails, next variant is tried."""
+    work = tmp_path / "work"
+    call_count = {"n": 0}
+
+    def fake_sub(url, prefix, lang, use_auto=False, work_dir=None, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] > 1:
             (Path(work_dir) / "transcript_temp.en.vtt").write_text(SAMPLE_VTT_CONTENT)
             return True
         return False
@@ -401,28 +417,7 @@ def test_process_video_subtitle_manual_first(mock_pipeline, tmp_path):
 
     result = process_video(VTT_URL, work_dir=str(work), output_dir=str(tmp_path))
     assert result == ("test_video", None)
-    # First call was manual (use_auto=False)
-    assert call_log[0][1] is False
-
-
-def test_process_video_subtitle_auto_fallback(mock_pipeline, tmp_path):
-    """When manual subs fail, auto subs are tried."""
-    work = tmp_path / "work"
-    call_log = []
-
-    def fake_sub(url, prefix, lang, use_auto, work_dir=None):
-        call_log.append(use_auto)
-        if use_auto:
-            (Path(work_dir) / "transcript_temp.en.vtt").write_text(SAMPLE_VTT_CONTENT)
-            return True
-        return False
-
-    mock_pipeline["try_sub"].side_effect = fake_sub
-
-    result = process_video(VTT_URL, work_dir=str(work), output_dir=str(tmp_path))
-    assert result == ("test_video", None)
-    assert False in call_log  # manual was tried
-    assert True in call_log   # auto was tried
+    assert call_count["n"] > 1
 
 
 # --- Whisper fallback -----------------------------------------------------
@@ -474,39 +469,42 @@ def test_process_video_force_whisper(mock_pipeline, tmp_path):
 # --- language detection ---------------------------------------------------
 
 def test_process_video_lang_auto_detect(mock_pipeline, tmp_path):
-    """When lang=None, auto-detects."""
-    mock_pipeline["detect_lang"].return_value = "es"
+    """When lang=None, language is detected from metadata."""
     mock_pipeline["try_sub"].return_value = False
     mock_pipeline["whisper"].return_value = False
 
     with pytest.raises(TranscriptError):
         process_video(VTT_URL, lang=None, work_dir=str(tmp_path),
                       output_dir=str(tmp_path))
-    mock_pipeline["detect_lang"].assert_called_once()
+    mock_pipeline["get_metadata"].assert_called_once()
 
 
 def test_process_video_lang_detect_fails_uses_fallback(mock_pipeline, tmp_path):
-    """When detection fails, falls back to fallback_lang."""
-    mock_pipeline["detect_lang"].return_value = None
+    """When metadata has no language, falls back to fallback_lang."""
+    mock_pipeline["get_metadata"].return_value = {
+        "title": "T", "sanitized_title": "test_video",
+        "duration": 60, "size": 1000000, "language": None,
+    }
     mock_pipeline["try_sub"].return_value = False
     mock_pipeline["whisper"].return_value = False
 
     with pytest.raises(TranscriptError):
         process_video(VTT_URL, lang=None, fallback_lang="fr",
                       work_dir=str(tmp_path), output_dir=str(tmp_path))
-    # detect was called, and the lang variants should include "fr"
-    mock_pipeline["detect_lang"].assert_called_once()
+    mock_pipeline["get_metadata"].assert_called_once()
 
 
 def test_process_video_explicit_lang_skips_detect(mock_pipeline, tmp_path):
-    """When lang is given, detection is not called."""
+    """When lang is given, metadata language is ignored."""
     mock_pipeline["try_sub"].return_value = False
     mock_pipeline["whisper"].return_value = False
 
     with pytest.raises(TranscriptError):
         process_video(VTT_URL, lang="de", work_dir=str(tmp_path),
                       output_dir=str(tmp_path))
-    mock_pipeline["detect_lang"].assert_not_called()
+    mock_pipeline["get_metadata"].assert_called_once()
+    first_lang = mock_pipeline["try_sub"].call_args_list[0].args[2]
+    assert "de" in first_lang
 
 
 # --- output_dir and work_dir ----------------------------------------------
@@ -515,7 +513,7 @@ def test_process_video_default_output_dir_is_cwd(mock_pipeline, isolated_cwd):
     """Without output_dir, the file is saved to CWD."""
     work = isolated_cwd / "work"
 
-    def fake_sub(url, prefix, lang, use_auto, work_dir=None):
+    def fake_sub(url, prefix, lang, use_auto=False, work_dir=None, **kwargs):
         (Path(work_dir) / "transcript_temp.en.vtt").write_text(SAMPLE_VTT_CONTENT)
         return True
 
@@ -536,7 +534,7 @@ def test_process_video_temp_work_dir_cleaned_up(mock_pipeline, tmp_path):
             super().__init__(*a, **kw)
             created_dirs.append(self.name)
 
-    def fake_sub(url, prefix, lang, use_auto, work_dir=None):
+    def fake_sub(url, prefix, lang, use_auto=False, work_dir=None, **kwargs):
         (Path(work_dir) / "transcript_temp.en.vtt").write_text(SAMPLE_VTT_CONTENT)
         return True
 
@@ -557,7 +555,7 @@ def test_process_video_json_format(mock_pipeline, tmp_path):
     work = tmp_path / "work"
     out = tmp_path / "out"
 
-    def fake_sub(url, prefix, lang, use_auto, work_dir=None):
+    def fake_sub(url, prefix, lang, use_auto=False, work_dir=None, **kwargs):
         (Path(work_dir) / "transcript_temp.en.vtt").write_text(SAMPLE_VTT_CONTENT)
         return True
 
@@ -572,7 +570,7 @@ def test_process_video_vtt_format(mock_pipeline, tmp_path):
     work = tmp_path / "work"
     out = tmp_path / "out"
 
-    def fake_sub(url, prefix, lang, use_auto, work_dir=None):
+    def fake_sub(url, prefix, lang, use_auto=False, work_dir=None, **kwargs):
         (Path(work_dir) / "transcript_temp.en.vtt").write_text(SAMPLE_VTT_CONTENT)
         return True
 
@@ -586,7 +584,7 @@ def test_process_video_stdout_mode(mock_pipeline, tmp_path):
     """stdout_mode prints transcript, no file saved."""
     work = tmp_path / "work"
 
-    def fake_sub(url, prefix, lang, use_auto, work_dir=None):
+    def fake_sub(url, prefix, lang, use_auto=False, work_dir=None, **kwargs):
         (Path(work_dir) / "transcript_temp.en.vtt").write_text(SAMPLE_VTT_CONTENT)
         return True
 
@@ -611,7 +609,7 @@ def test_process_video_keep_vtt(mock_pipeline, tmp_path):
     work = tmp_path / "work"
     out = tmp_path / "out"
 
-    def fake_sub(url, prefix, lang, use_auto, work_dir=None):
+    def fake_sub(url, prefix, lang, use_auto=False, work_dir=None, **kwargs):
         (Path(work_dir) / "transcript_temp.en.vtt").write_text(SAMPLE_VTT_CONTENT)
         return True
 
@@ -647,9 +645,12 @@ def test_process_video_passes_whisper_params(mock_pipeline, tmp_path):
 
 
 def test_process_video_passes_video_info_to_whisper(mock_pipeline, tmp_path):
-    """video_info is reused (not fetched twice) when calling Whisper."""
+    """video_info from metadata is reused (not fetched twice) when calling Whisper."""
     mock_pipeline["try_sub"].return_value = False
-    mock_pipeline["get_info"].return_value = {"duration": 120, "size": 2000000, "title": "T"}
+    mock_pipeline["get_metadata"].return_value = {
+        "title": "T", "sanitized_title": "test_video",
+        "duration": 120, "size": 2000000, "language": "en",
+    }
 
     def fake_whisper(url, title, **kwargs):
         assert kwargs["video_info"]["duration"] == 120
@@ -660,8 +661,8 @@ def test_process_video_passes_video_info_to_whisper(mock_pipeline, tmp_path):
 
     process_video(VTT_URL, force_whisper=True,
                   work_dir=str(tmp_path), output_dir=str(tmp_path))
-    # get_video_info called only once (for both main flow and whisper)
-    mock_pipeline["get_info"].assert_called_once()
+    # get_video_metadata called only once (for both main flow and whisper)
+    mock_pipeline["get_metadata"].assert_called_once()
 
 
 # --- log_callback ---------------------------------------------------------
@@ -670,7 +671,7 @@ def test_process_video_log_callback_receives_events(mock_pipeline, tmp_path):
     """When a log_callback is provided, it receives log events."""
     events = []
 
-    def fake_sub(url, prefix, lang, use_auto, work_dir=None):
+    def fake_sub(url, prefix, lang, use_auto=False, work_dir=None, **kwargs):
         (Path(work_dir) / "transcript_temp.en.vtt").write_text(SAMPLE_VTT_CONTENT)
         return True
 

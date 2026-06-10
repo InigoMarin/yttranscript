@@ -25,11 +25,9 @@ from .summarize import summarize_text
 from .pdf import markdown_to_pdf, markdown_to_epub, markdown_to_docx
 from .ytdlp import (
     ensure_yt_dlp,
-    get_video_title,
+    get_video_metadata,
     list_subs,
-    get_video_info,
     try_download_subtitle,
-    detect_video_language,
     get_lang_variants,
 )
 
@@ -212,10 +210,13 @@ def process_video(
                 list_subs(url)
                 return None
 
+            # Single yt-dlp call for all metadata (language, title, duration, size)
+            info("Fetching video metadata...")
+            metadata = get_video_metadata(url)
+
             # Auto-detect language if not specified
             if lang is None:
-                info("Auto-detecting video language...")
-                lang = detect_video_language(url)
+                lang = metadata.get("language")
                 if lang:
                     success(f"Detected language: {lang}")
                 else:
@@ -226,12 +227,15 @@ def process_video(
             if output:
                 video_title = output
             else:
-                info("Fetching video title...")
-                video_title = get_video_title(url)
+                video_title = metadata["sanitized_title"]
                 success(f"Video: {video_title}")
 
-            # Single yt-dlp call for video info; reused by Whisper below.
-            video_info = get_video_info(url)
+            # Build video_info from single metadata call; reused by Whisper below.
+            video_info = {
+                "duration": metadata["duration"],
+                "size": metadata["size"],
+                "title": metadata["title"],
+            }
             video_duration = video_info["duration"]
 
             # Intermediate files go into work_path (absolute paths so subprocesses
@@ -252,23 +256,14 @@ def process_video(
                 downloaded = False
 
                 for variant in lang_variants:
-                    info(f"Trying manual subtitles ({variant})...")
+                    info(f"Trying subtitles ({variant})...")
                     if try_download_subtitle(
-                        url, temp_prefix, variant, use_auto=False, work_dir=work_path,
+                        url, temp_prefix, variant,
+                        work_dir=work_path, try_both=True,
                     ):
                         downloaded = True
-                        success("Manual subtitles downloaded!")
+                        success("Subtitles downloaded!")
                         break
-
-                if not downloaded:
-                    for variant in lang_variants:
-                        info(f"Trying auto-generated subtitles ({variant})...")
-                        if try_download_subtitle(
-                            url, temp_prefix, variant, use_auto=True, work_dir=work_path,
-                        ):
-                            downloaded = True
-                            success("Auto-generated subtitles downloaded!")
-                            break
 
                 if downloaded:
                     vtt_files = list(work_path.glob("transcript_temp*.vtt"))

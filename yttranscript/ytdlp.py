@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -89,6 +90,66 @@ def ensure_whisper() -> bool:
         return False
 
     return command_exists("whisper")
+
+
+def get_video_metadata(url: str) -> dict:
+    """Fetch all video metadata in a single yt-dlp -j call.
+
+    Consolidates language detection, title, duration and size into one
+    subprocess invocation instead of three separate ones.
+
+    Returns dict with keys:
+        title, sanitized_title, duration, size, language.
+    """
+    result = run(
+        ["yt-dlp", "-j", "-f", "bestaudio", url],
+        capture=True, check=False, timeout=TIMEOUT_METADATA,
+    )
+    fallback = {
+        "title": "unknown",
+        "sanitized_title": "transcript",
+        "duration": 0,
+        "size": 0,
+        "language": None,
+    }
+    if result.returncode != 0:
+        return fallback
+    try:
+        data = json.loads(result.stdout)
+    except (json.JSONDecodeError, ValueError):
+        return fallback
+
+    title = data.get("title") or "unknown"
+
+    duration = 0
+    raw_duration = data.get("duration")
+    if raw_duration is not None:
+        try:
+            duration = int(float(raw_duration))
+        except (ValueError, TypeError):
+            pass
+
+    size = 0
+    raw_size = data.get("filesize_approx") or data.get("filesize")
+    if raw_size is not None:
+        try:
+            size = int(float(raw_size))
+        except (ValueError, TypeError):
+            pass
+
+    language = data.get("language")
+    if not language or language == "NA":
+        language = None
+    elif "-" in language:
+        language = language.split("-")[0]
+
+    return {
+        "title": title,
+        "sanitized_title": sanitize_filename(title),
+        "duration": duration,
+        "size": size,
+        "language": language,
+    }
 
 
 def get_video_title(url: str) -> str:
@@ -192,14 +253,18 @@ def try_download_subtitle(
     url: str,
     output_prefix: str,
     lang: str,
-    use_auto: bool,
+    use_auto: bool = False,
     work_dir: Optional[Path] = None,
+    try_both: bool = False,
 ) -> bool:
     """Attempt to download subtitles. Returns True on success.
 
     `output_prefix` may be relative (CWD) or absolute. When `work_dir` is given,
     it overrides the directory where the VTT is searched for (used when the
     caller passes an absolute prefix inside a tempdir).
+
+    When `try_both` is True, both --write-sub and --write-auto-sub are passed,
+    letting yt-dlp prefer manual subs and fall back to auto in a single call.
     """
     cmd = [
         "yt-dlp",
@@ -207,7 +272,9 @@ def try_download_subtitle(
         "--output", output_prefix,
         "--sub-langs", lang,
     ]
-    if use_auto:
+    if try_both:
+        cmd.extend(["--write-sub", "--write-auto-sub"])
+    elif use_auto:
         cmd.append("--write-auto-sub")
     else:
         cmd.append("--write-sub")
@@ -243,10 +310,10 @@ def detect_video_language(url: str) -> Optional[str]:
 def get_lang_variants(lang: str) -> list[str]:
     """Generate language code variants to try for subtitle download.
 
-    Tries the exact code first, then falls back to a wildcard pattern
-    to catch YouTube-specific variants like es-orig, es-en, etc.
+    Tries the wildcard pattern first (catches YouTube-specific variants
+    like es-orig, es-en, etc.), then the exact code as fallback.
     """
     base = lang.split("-")[0]
     if base != lang:
-        return [lang, base, f"{base}.*"]
-    return [lang, f"{lang}.*"]
+        return [f"{base}.*", lang, base]
+    return [f"{lang}.*", lang]

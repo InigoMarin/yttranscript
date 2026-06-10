@@ -80,12 +80,20 @@ def _sanitize_markdown(text: str) -> str:
     return text
 
 
-def _run_pandoc(md_content: str, output_path: Path, fmt: str = "pdf") -> None:
+def _run_pandoc(
+    md_content: str,
+    output_path: Path,
+    fmt: str = "pdf",
+    metadata: Optional[dict] = None,
+) -> None:
     """Run Pandoc to convert *md_content* into the requested *fmt*.
 
     *fmt* is one of ``"pdf"``, ``"epub"``, ``"docx"``.  For PDF the Typst
     engine and optional template are used; for EPUB/DOCX Pandoc picks the
     right writer from the output file extension.
+
+    *metadata* is an optional dict of ``{key: value}`` pairs passed as
+    ``--metadata key=value`` flags to Pandoc.
     """
     template = _TEMPLATE_PATH if _TEMPLATE_PATH.exists() else None
 
@@ -104,6 +112,9 @@ def _run_pandoc(md_content: str, output_path: Path, fmt: str = "pdf") -> None:
             cmd.append("--pdf-engine=typst")
             if template:
                 cmd.extend(["--template", str(template)])
+        if metadata:
+            for key, value in metadata.items():
+                cmd.append(f"--metadata={key}={value}")
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=60,
         )
@@ -143,17 +154,23 @@ def markdown_to_epub(
     """Convert markdown text to an EPUB e-book.
 
     Uses Pandoc. When video_info is provided, generates YAML frontmatter
-    with metadata (title, URL, duration, source).
+    with metadata (title, URL, duration, source) and passes ``--metadata``
+    flags for title and author.
     """
     _check_deps("epub")
     info("Converting to EPUB...")
 
     md_content = _sanitize_markdown(markdown_text)
+    meta = None
     if video_info:
         frontmatter = _build_frontmatter(video_info)
         md_content = frontmatter + "\n\n" + md_content
+        meta = {
+            "title": video_info.get("title", "unknown"),
+            "author": "yttranscript",
+        }
 
-    _run_pandoc(md_content, output_path, fmt="epub")
+    _run_pandoc(md_content, output_path, fmt="epub", metadata=meta)
 
 
 def markdown_to_docx(
@@ -164,17 +181,23 @@ def markdown_to_docx(
     """Convert markdown text to a DOCX (Word) document.
 
     Uses Pandoc. When video_info is provided, generates YAML frontmatter
-    with metadata (title, URL, duration, source).
+    with metadata (title, URL, duration, source) and passes ``--metadata``
+    flags for title and author.
     """
     _check_deps("docx")
     info("Converting to DOCX...")
 
     md_content = _sanitize_markdown(markdown_text)
+    meta = None
     if video_info:
         frontmatter = _build_frontmatter(video_info)
         md_content = frontmatter + "\n\n" + md_content
+        meta = {
+            "title": video_info.get("title", "unknown"),
+            "author": "yttranscript",
+        }
 
-    _run_pandoc(md_content, output_path, fmt="docx")
+    _run_pandoc(md_content, output_path, fmt="docx", metadata=meta)
 
 
 def _section_separator(fmt: str) -> str:
@@ -219,7 +242,11 @@ def markdown_to_merged(
         section += _sanitize_markdown(summary_md)
         md_parts.append(section)
 
-    _run_pandoc("\n".join(md_parts), output_path, fmt=fmt)
+    meta = None
+    if fmt in ("epub", "docx"):
+        meta = {"title": title, "author": "yttranscript"}
+
+    _run_pandoc("\n".join(md_parts), output_path, fmt=fmt, metadata=meta)
 
 
 def markdown_to_merged_pdf(

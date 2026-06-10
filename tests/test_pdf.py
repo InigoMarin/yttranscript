@@ -317,3 +317,103 @@ def test_merged_uses_channel_name_in_frontmatter(tmp_path):
     markdown_to_merged(SECTIONS, out, fmt="epub", channel_name="MyAwesomeChannel")
     assert out.exists()
     assert out.stat().st_size > 0
+
+
+# ---------------------------------------------------------------------------
+# Metadata flag tests (mocked subprocess, no pandoc needed)
+# ---------------------------------------------------------------------------
+
+def _run_pandoc_spy(monkeypatch, *, need_typst=False):
+    """Monkeypatch subprocess.run and return a list collecting the cmd."""
+    calls = []
+
+    class _FakeResult:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def _fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return _FakeResult()
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+    # Make deps check pass (pandoc always, typst only when requested)
+    if need_typst:
+        monkeypatch.setattr("shutil.which", lambda cmd: cmd in ("pandoc", "typst"))
+    else:
+        monkeypatch.setattr("shutil.which", lambda cmd: cmd == "pandoc")
+    return calls
+
+
+def test_epub_passes_metadata_flags(monkeypatch, tmp_path):
+    """EPUB passes --metadata=title and --metadata=author when video_info given."""
+    calls = _run_pandoc_spy(monkeypatch)
+    out = tmp_path / "test.epub"
+    video_info = {"title": "My Video", "url": "https://example.com", "duration": 60}
+    markdown_to_epub("content", out, video_info=video_info)
+
+    assert len(calls) == 1
+    cmd = calls[0]
+    assert "--metadata=title=My Video" in cmd
+    assert "--metadata=author=yttranscript" in cmd
+
+
+def test_epub_no_metadata_without_video_info(monkeypatch, tmp_path):
+    """EPUB omits --metadata flags when no video_info is provided."""
+    calls = _run_pandoc_spy(monkeypatch)
+    out = tmp_path / "test.epub"
+    markdown_to_epub("content", out)
+
+    assert len(calls) == 1
+    cmd = calls[0]
+    metadata_flags = [a for a in cmd if a.startswith("--metadata=")]
+    assert metadata_flags == []
+
+
+def test_docx_passes_metadata_flags(monkeypatch, tmp_path):
+    """DOCX passes --metadata=title and --metadata=author when video_info given."""
+    calls = _run_pandoc_spy(monkeypatch)
+    out = tmp_path / "test.docx"
+    video_info = {"title": "My Video", "url": "https://example.com", "duration": 60}
+    markdown_to_docx("content", out, video_info=video_info)
+
+    assert len(calls) == 1
+    cmd = calls[0]
+    assert "--metadata=title=My Video" in cmd
+    assert "--metadata=author=yttranscript" in cmd
+
+
+def test_merged_epub_passes_metadata_flags(monkeypatch, tmp_path):
+    """Merged EPUB passes --metadata with channel name as title."""
+    calls = _run_pandoc_spy(monkeypatch)
+    out = tmp_path / "merged.epub"
+    markdown_to_merged(SECTIONS, out, fmt="epub", channel_name="TestChannel")
+
+    assert len(calls) == 1
+    cmd = calls[0]
+    assert "--metadata=title=TestChannel" in cmd
+    assert "--metadata=author=yttranscript" in cmd
+
+
+def test_merged_docx_passes_metadata_flags(monkeypatch, tmp_path):
+    """Merged DOCX passes --metadata with channel name as title."""
+    calls = _run_pandoc_spy(monkeypatch)
+    out = tmp_path / "merged.docx"
+    markdown_to_merged(SECTIONS, out, fmt="docx", channel_name="TestChannel")
+
+    assert len(calls) == 1
+    cmd = calls[0]
+    assert "--metadata=title=TestChannel" in cmd
+    assert "--metadata=author=yttranscript" in cmd
+
+
+def test_merged_pdf_no_metadata_flags(monkeypatch, tmp_path):
+    """Merged PDF does not pass --metadata flags."""
+    calls = _run_pandoc_spy(monkeypatch, need_typst=True)
+    out = tmp_path / "merged.pdf"
+    markdown_to_merged(SECTIONS, out, fmt="pdf", channel_name="TestChannel")
+
+    assert len(calls) == 1
+    cmd = calls[0]
+    metadata_flags = [a for a in cmd if a.startswith("--metadata=")]
+    assert metadata_flags == []
