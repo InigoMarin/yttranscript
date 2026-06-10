@@ -68,7 +68,7 @@ def test_sse_done_event_on_success():
         if cb:
             cb("info", "Downloading...")
             cb("success", "Done!")
-        return "My Video Title"
+        return ("My Video Title", None)
 
     with patch("yttranscript.web.process_video", side_effect=fake_process_video), \
          patch("yttranscript.web.load_config", return_value={}), \
@@ -93,7 +93,7 @@ def test_sse_done_event_json_format():
         cb = kwargs.get("log_callback")
         if cb:
             cb("info", "ok")
-        return "T"
+        return ("T", None)
 
     with patch("yttranscript.web.process_video", side_effect=fake_pv), \
          patch("yttranscript.web.load_config", return_value={}):
@@ -111,7 +111,7 @@ def test_sse_done_event_vtt_format():
         cb = kwargs.get("log_callback")
         if cb:
             cb("info", "ok")
-        return "T"
+        return ("T", None)
 
     with patch("yttranscript.web.process_video", side_effect=fake_pv), \
          patch("yttranscript.web.load_config", return_value={}):
@@ -135,7 +135,7 @@ def test_sse_stdout_captured_in_done_event():
         def fake_pv(**kwargs):
             _sys.stdout.write("Transcript line 1\n")
             _sys.stdout.write("Transcript line 2\n")
-            return "T"
+            return ("T", None)
 
         with patch("yttranscript.web.process_video", side_effect=fake_pv), \
              patch("yttranscript.web.load_config", return_value={}):
@@ -203,7 +203,7 @@ def test_api_passes_url_and_lang():
 
     def fake_pv(**kwargs):
         received.update(kwargs)
-        return "T"
+        return ("T", None)
 
     with patch("yttranscript.web.process_video", side_effect=fake_pv), \
          patch("yttranscript.web.load_config", return_value={}):
@@ -224,7 +224,7 @@ def test_api_passes_summarize_flag():
 
     def fake_pv(**kwargs):
         received.update(kwargs)
-        return "T"
+        return ("T", None)
 
     with patch("yttranscript.web.process_video", side_effect=fake_pv), \
          patch("yttranscript.web.load_config", return_value={}):
@@ -241,7 +241,7 @@ def test_api_passes_config_values():
 
     def fake_pv(**kwargs):
         received.update(kwargs)
-        return "T"
+        return ("T", None)
 
     config = {
         "summarize_cmd": "llama-cli",
@@ -278,6 +278,86 @@ def test_title_fallback_to_transcript():
     assert done["type"] == "done"
     assert done["title"] == "transcript"
     assert "transcript.txt" in done["filename"]
+
+
+# --- binary format (PDF/EPUB/DOCX) via download ---------------------------
+
+def test_binary_format_uses_file_output():
+    """Binary formats pass stdout_mode=False and output_dir to process_video."""
+    received = {}
+
+    def fake_pv(**kwargs):
+        received.update(kwargs)
+        out_dir = kwargs.get("output_dir")
+        if out_dir:
+            from pathlib import Path
+            (Path(out_dir) / "video.pdf").write_bytes(b"%PDF-1.4 fake")
+        return ("video", None)
+
+    with patch("yttranscript.web.process_video", side_effect=fake_pv), \
+         patch("yttranscript.web.load_config", return_value={}):
+        with _Harness() as h:
+            body = h.stream(
+                "/api?url=https://youtube.com/watch?v=x&format=pdf",
+                headers={"Origin": f"http://localhost:{h.port}"})
+
+    assert received["stdout_mode"] is False
+    assert received["output_dir"] is not None
+    assert "yttranscript-downloads" in received["output_dir"]
+
+    events = _parse_sse_events(body)
+    done = events[-1]
+    assert done["type"] == "done"
+    assert "/download/" in done["download"]
+    assert done["filename"].endswith(".pdf")
+
+
+def test_binary_format_serves_actual_file():
+    """The download link points to a file with real binary content."""
+    def fake_pv(**kwargs):
+        out_dir = kwargs.get("output_dir")
+        if out_dir:
+            from pathlib import Path
+            (Path(out_dir) / "video.epub").write_bytes(b"PK\x03\x04 epub content")
+        return ("video", None)
+
+    with patch("yttranscript.web.process_video", side_effect=fake_pv), \
+         patch("yttranscript.web.load_config", return_value={}):
+        with _Harness() as h:
+            api_body = h.stream(
+                "/api?url=https://youtube.com/watch?v=x&format=epub",
+                headers={"Origin": f"http://localhost:{h.port}"})
+
+    events = _parse_sse_events(api_body)
+    done = events[-1]
+    assert done["type"] == "done"
+    download_path = done["download"]
+
+    with _Harness() as h:
+        resp = urllib.request.urlopen(
+            f"http://127.0.0.1:{h.port}{download_path}")
+        content = resp.read()
+
+    assert content == b"PK\x03\x04 epub content"
+
+
+def test_text_format_still_uses_stdout_mode():
+    """Text formats continue to use stdout_mode=True (no output_dir)."""
+    received = {}
+
+    def fake_pv(**kwargs):
+        received.update(kwargs)
+        return ("video", None)
+
+    with patch("yttranscript.web.process_video", side_effect=fake_pv), \
+         patch("yttranscript.web.load_config", return_value={}):
+        with _Harness() as h:
+            h.stream(
+                "/api?url=https://youtube.com/watch?v=x&format=txt",
+                headers={"Origin": f"http://localhost:{h.port}"})
+
+    assert received["stdout_mode"] is True
+    assert received.get("output_dir") is None
 
 
 # --- HTML page serving -----------------------------------------------------

@@ -19,8 +19,11 @@ from __future__ import annotations
 
 import io
 import json
+import secrets
 import sys
+import tempfile
 import threading
+import time
 import urllib.parse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -47,6 +50,23 @@ def _allowed_origins(port: int) -> set[str]:
 
 _WEB_HTML = (Path(__file__).parent / "web_ui.html").read_text(encoding="utf-8")
 
+_BINARY_FORMATS = {"pdf", "epub", "docx"}
+
+_DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "yttranscript-downloads"
+_DOWNLOAD_TTL = 600
+
+_downloads_lock = threading.Lock()
+_downloads: dict[str, tuple[str, float]] = {}
+
+
+def _cleanup_downloads():
+    now = time.time()
+    with _downloads_lock:
+        expired = [k for k, (_, ts) in _downloads.items() if now - ts > _DOWNLOAD_TTL]
+        for k in expired:
+            path, _ = _downloads.pop(k)
+            Path(path).unlink(missing_ok=True)
+
 
 class TranscriptHandler(BaseHTTPRequestHandler):
     """HTTP request handler for the web UI."""
@@ -70,10 +90,6 @@ class TranscriptHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api":
-            # CSRF + DNS rebinding guards. Browsers send Origin on cross-site
-            # requests; we accept absent Origin (curl, direct nav) but reject
-            # anything that doesn't look like localhost. The Host check blocks
-            # DNS-rebinding attacks where a public hostname resolves to 127.0.0.1.
             if not self._check_host():
                 return
             if not self._check_origin():
@@ -81,7 +97,31 @@ class TranscriptHandler(BaseHTTPRequestHandler):
             self._serve_api(parsed.query)
             return
 
+        if parsed.path.startswith("/download/"):
+            self._serve_download(parsed.path[len("/download/"):])
+            return
+
         self.send_error(404)
+
+    def _serve_download(self, download_id: str):
+        _cleanup_downloads()
+        with _downloads_lock:
+            entry = _downloads.get(download_id)
+        if not entry:
+            self.send_error(404, "Download not found or expired")
+            return
+        path, _ = entry
+        file_path = Path(path)
+        if not file_path.exists():
+            self.send_error(404, "File not found")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Disposition", f'attachment; filename="{file_path.name}"')
+        self.send_header("Content-Length", str(file_path.stat().st_size))
+        self.end_headers()
+        with open(file_path, "rb") as f:
+            self.wfile.write(f.read())
 
     def _check_host(self) -> bool:
         """DNS rebinding guard. Host header must resolve to localhost/127.0.0.1."""
@@ -131,7 +171,7 @@ class TranscriptHandler(BaseHTTPRequestHandler):
             self._json_response({"error": f"Invalid language code: {lang}"})
             return
         fmt = params.get("format", ["txt"])[0]
-        if fmt not in ("txt", "json", "vtt", "srt", "epub", "docx"):
+        if fmt not in ("txt", "json", "vtt", "srt", "pdf", "epub", "docx"):
             self._json_response({"error": f"Invalid format: {fmt}"})
             return
         timestamps = params.get("timestamps", ["0"])[0] == "1"
@@ -169,13 +209,17 @@ class TranscriptHandler(BaseHTTPRequestHandler):
             send_event({"type": level, "message": msg})
 
         config = load_config()
-        buf = io.StringIO()
 
         title = "transcript"
         try:
-            with stdout_capture(buf):
+            if fmt in _BINARY_FORMATS:
+                _DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+                download_id = secrets.token_urlsafe(16)
+                bin_dir = _DOWNLOAD_DIR / download_id
+                bin_dir.mkdir(parents=True, exist_ok=True)
+
                 try:
-                    title = process_video(
+                    result = process_video(
                         url=url,
                         fmt=fmt,
                         lang=lang,
@@ -185,9 +229,12 @@ class TranscriptHandler(BaseHTTPRequestHandler):
                         summarize_prompt=resolve_value(None, config, "summarize_prompt"),
                         summarize_timeout=resolve_value(None, config, "summarize_timeout"),
                         fallback_lang=resolve_value(None, config, "fallback_lang"),
-                        stdout_mode=True,
+                        stdout_mode=False,
+                        output_dir=str(bin_dir),
                         log_callback=log_callback,
-                    ) or "transcript"
+                    )
+                    if result:
+                        title = result[0]
                 except (BrokenPipeError, ConnectionResetError, OSError):
                     self.close_connection = True
                     return
@@ -205,20 +252,79 @@ class TranscriptHandler(BaseHTTPRequestHandler):
                         pass
                     self.close_connection = True
                     return
+
+                ext = {"pdf": ".pdf", "epub": ".epub", "docx": ".docx"}[fmt]
+                filename = sanitize_filename(title) + ext
+
+                files = list(bin_dir.glob(f"*{ext}"))
+                if not files:
+                    try:
+                        send_event({"type": "error", "message": "Failed to generate output file."})
+                    except (BrokenPipeError, ConnectionResetError, OSError):
+                        pass
+                    self.close_connection = True
+                    return
+
+                with _downloads_lock:
+                    _downloads[download_id] = (str(files[0]), time.time())
+                try:
+                    send_event({
+                        "type": "done",
+                        "download": f"/download/{download_id}",
+                        "title": title,
+                        "filename": filename,
+                    })
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    pass
+            else:
+                buf = io.StringIO()
+                with stdout_capture(buf):
+                    try:
+                        result = process_video(
+                            url=url,
+                            fmt=fmt,
+                            lang=lang,
+                            timestamps=timestamps,
+                            summarize=summarize,
+                            summarize_cmd=resolve_value(None, config, "summarize_cmd"),
+                            summarize_prompt=resolve_value(None, config, "summarize_prompt"),
+                            summarize_timeout=resolve_value(None, config, "summarize_timeout"),
+                            fallback_lang=resolve_value(None, config, "fallback_lang"),
+                            stdout_mode=True,
+                            log_callback=log_callback,
+                        )
+                        if result:
+                            title = result[0]
+                    except (BrokenPipeError, ConnectionResetError, OSError):
+                        self.close_connection = True
+                        return
+                    except TranscriptError as e:
+                        try:
+                            send_event({"type": "error", "message": str(e)})
+                        except (BrokenPipeError, ConnectionResetError, OSError):
+                            pass
+                        self.close_connection = True
+                        return
+                    except Exception as e:
+                        try:
+                            send_event({"type": "error", "message": str(e)})
+                        except (BrokenPipeError, ConnectionResetError, OSError):
+                            pass
+                        self.close_connection = True
+                        return
+
+                text = buf.getvalue()
+                ext = {
+                    "json": ".json", "txt": ".txt", "vtt": ".vtt", "srt": ".srt",
+                }.get(fmt, ".txt")
+                filename = sanitize_filename(title) + ext
+                try:
+                    send_event({"type": "done", "text": text, "title": title, "filename": filename})
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    pass
         finally:
             _transcription_slots.release()
 
-        text = buf.getvalue()
-        ext = {
-            "json": ".json", "txt": ".txt", "vtt": ".vtt", "srt": ".srt",
-            "epub": ".epub", "docx": ".docx",
-        }.get(fmt, ".txt")
-        filename = sanitize_filename(title) + ext
-
-        try:
-            send_event({"type": "done", "text": text, "title": title, "filename": filename})
-        except (BrokenPipeError, ConnectionResetError, OSError):
-            pass
         self.close_connection = True
 
     def _json_response(self, data):
