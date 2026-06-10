@@ -89,6 +89,20 @@ def confirm(prompt: str, default: bool = False) -> bool:
     return answer in ("y", "yes")
 
 
+def format_duration(seconds: int | float) -> str:
+    """Format seconds as human-readable duration (e.g. '1:23:45', '12:34').
+
+    Returns 'unknown' for zero/falsy values.
+    """
+    seconds = int(seconds)
+    if not seconds:
+        return "unknown"
+    hours = seconds // 3600
+    if hours:
+        return f"{hours}:{(seconds % 3600) // 60:02d}:{seconds % 60:02d}"
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
 def sanitize_filename(title: str) -> str:
     """Replace characters problematic in filenames and cap length."""
     for ch in '/:?\"<>|*':

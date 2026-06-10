@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from .log import info
+from .util import format_duration
 
 _TEMPLATE_PATH = Path(__file__).parent / "templates" / "transcript.typ"
 
@@ -22,15 +23,7 @@ PANDOC_FORMATS = {"pdf", "epub", "docx"}
 
 
 def _build_frontmatter(video_info: dict) -> str:
-    duration = video_info.get("duration", 0)
-    if duration:
-        hours = duration // 3600
-        if hours:
-            duration_str = f"{hours}:{(duration % 3600) // 60:02d}:{duration % 60:02d}"
-        else:
-            duration_str = f"{duration // 60}:{duration % 60:02d}"
-    else:
-        duration_str = "unknown"
+    duration_str = format_duration(video_info.get("duration", 0))
 
     source = "Whisper" if video_info.get("whisper") else "YouTube subtitles"
 
@@ -43,15 +36,6 @@ def _build_frontmatter(video_info: dict) -> str:
     lines.append(f"source: {source}")
     lines.append("---")
     return "\n".join(lines)
-
-
-def _format_duration(seconds: int) -> str:
-    if not seconds:
-        return "unknown"
-    hours = seconds // 3600
-    if hours:
-        return f"{hours}:{(seconds % 3600) // 60:02d}:{seconds % 60:02d}"
-    return f"{seconds // 60}:{seconds % 60:02d}"
 
 
 def _check_deps(fmt: str = "pdf") -> None:
@@ -229,7 +213,7 @@ def markdown_to_merged(
     sep = _section_separator(fmt)
 
     for video_info, summary_md in sections:
-        duration = _format_duration(video_info.get("duration", 0))
+        duration = format_duration(video_info.get("duration", 0))
         source = "Whisper" if video_info.get("whisper") else "YouTube subtitles"
         url = video_info.get("url", "")
         vtitle = video_info.get("title", "unknown")

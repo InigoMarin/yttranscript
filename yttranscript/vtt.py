@@ -122,15 +122,9 @@ def vtt_to_json(vtt_path: Path, video_info: dict, chunk_size: int = 30) -> str:
 
 def format_video_header(video_info: dict) -> str:
     """Format video metadata as a Markdown header with separator line."""
-    duration = video_info.get("duration", 0)
-    if duration:
-        hours = duration // 3600
-        if hours:
-            duration_str = f"{hours}:{(duration % 3600) // 60:02d}:{duration % 60:02d}"
-        else:
-            duration_str = f"{duration // 60}:{duration % 60:02d}"
-    else:
-        duration_str = "unknown"
+    from .util import format_duration
+
+    duration_str = format_duration(video_info.get("duration", 0))
     return (
         f"# {video_info.get('title', 'unknown')}\n"
         f"\n"
