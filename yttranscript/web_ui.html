@@ -286,18 +286,6 @@ function renderMarkdown(text) {
     const nonEmpty = lines.filter(l => l.trim());
     const metaMatches = nonEmpty.map(l => l.match(metaRe)).filter(Boolean);
     if (metaMatches.length === nonEmpty.length && metaMatches.length > 0) {
-      let thumbHtml = '';
-      for (const m of metaMatches) {
-        if (m[1] === 'URL') {
-          const vid = m[2].match(/(?:watch\?v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
-          if (vid) {
-            thumbHtml = '<a href="' + m[2] + '" target="_blank" rel="noopener noreferrer">' +
-              '<img src="https://i.ytimg.com/vi/' + vid[1] + '/mqdefault.jpg" alt="Video thumbnail" onerror="this.parentElement.style.display=\'none\'">' +
-              '</a>';
-          }
-          break;
-        }
-      }
       let titleHtml = '';
       if (html.length > 0 && /^<h[1-3]>/.test(html[html.length - 1])) {
         titleHtml = html.pop();
@@ -310,16 +298,8 @@ function renderMarkdown(text) {
         }
         return '<span class="meta-chip"><b>' + label + ':</b> ' + val + '</span>';
       });
-      if (thumbHtml) {
-        html.push('<div class="video-card">' +
-          '<div class="video-card-thumb">' + thumbHtml + '</div>' +
-          '<div class="video-card-info">' + titleHtml +
-          '<div id="video-card-stats" class="video-card-stats"></div>' +
-          '<div class="meta-row">' + chips.join('') + '</div></div></div>');
-      } else {
-        if (titleHtml) html.push(titleHtml);
-        html.push('<div class="meta-row">' + chips.join('') + '</div>');
-      }
+      if (titleHtml) html.push(titleHtml);
+      if (chips.length) html.push('<div class="meta-row">' + chips.join('') + '</div>');
       continue;
     }
     const joined = lines.map(l => l.endsWith('  ') ? l.slice(0,-2) + '<br>' : l).join(' ');
