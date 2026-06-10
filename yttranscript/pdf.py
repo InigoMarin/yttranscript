@@ -6,7 +6,6 @@ require Pandoc itself (no Typst).
 
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 import tempfile
@@ -23,16 +22,28 @@ _TEMPLATE_PATH = Path(__file__).parent / "templates" / "transcript.typ"
 PANDOC_FORMATS = {"pdf", "epub", "docx"}
 
 
+def _yaml_quote(value: str) -> str:
+    """Escape a string for YAML double-quoted scalar.
+    
+    In YAML double-quoted strings, we only need to escape backslashes and quotes.
+    """
+    if not value:
+        return '""'
+    # Escape backslashes first, then double quotes
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def _build_frontmatter(video_info: dict) -> str:
     duration_str = format_duration(video_info.get("duration", 0))
 
     source = "Whisper" if video_info.get("whisper") else "YouTube subtitles"
 
     lines = ["---"]
-    lines.append(f"title: {json.dumps(video_info.get('title', 'unknown'))}")
+    lines.append(f"title: {_yaml_quote(video_info.get('title', 'unknown'))}")
     url = video_info.get("url", "")
     if url:
-        lines.append(f"url: {url}")
+        lines.append(f"url: {_yaml_quote(url)}")
     lines.append(f"duration: {duration_str}")
     lines.append(f"source: {source}")
     lines.append("---")
@@ -208,7 +219,7 @@ def markdown_to_merged(
     info(f"Generating merged {fmt.upper()}...")
 
     title = channel_name or "Transcripts"
-    frontmatter_lines = ["---", f"title: {title}", "---"]
+    frontmatter_lines = ["---", f"title: {_yaml_quote(title)}", "---"]
     md_parts = ["\n".join(frontmatter_lines)]
 
     sep = _section_separator(fmt)

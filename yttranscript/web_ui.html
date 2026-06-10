@@ -14,22 +14,104 @@
   html.dark { --bg: #0f0f0f; --surface: #1a1a2e; --text: #e2e8f0; --muted: #94a3b8; --border: #334155; --input-bg: #0f0f0f; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; justify-content: center; padding: 2rem; }
-  .container { max-width: 800px; width: 100%; }
-  h1 { font-size: 1.5rem; margin-bottom: 1.5rem; color: var(--accent); display: flex; align-items: center; justify-content: space-between; }
+  .container { max-width: 860px; width: 100%; }
+
+  /* header */
+  h1 { font-size: 1.3rem; margin-bottom: 1.25rem; color: var(--accent); display: flex; align-items: center; justify-content: space-between; }
+
+  /* steps */
+  .steps { display: flex; gap: 0; margin-bottom: 1.25rem; }
+  .step { flex: 1; text-align: center; padding: 0.45rem 0.3rem; font-size: 0.78rem; color: var(--muted); border-bottom: 2px solid var(--border); transition: color 0.25s, border-color 0.25s; cursor: default; }
+  .step.active { color: var(--accent); border-color: var(--accent); }
+  .step.done { color: var(--ok); border-color: var(--ok); cursor: pointer; }
+  .step-num { display: inline-block; width: 20px; height: 20px; line-height: 20px; border-radius: 50%; background: var(--border); font-size: 0.7rem; font-weight: 700; margin-right: 0.25rem; text-align: center; transition: background 0.25s, color 0.25s; }
+  .step.active .step-num { background: var(--accent); color: #fff; }
+  .step.done .step-num { background: var(--ok); color: #fff; }
+
+  /* cards */
   .card { background: var(--surface); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; }
-  input[type="text"] { width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); font-size: 1rem; }
-  input[type="text"]:focus { outline: none; border-color: var(--accent); }
-  .row { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; align-items: center; }
-  select, input[type="checkbox"] { accent-color: var(--accent); }
-  select { padding: 0.5rem; border-radius: 6px; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); }
-  .lang-input { width: 5rem; padding: 0.35rem 0.5rem; border-radius: 6px; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); font-size: 0.875rem; }
-  label { font-size: 0.875rem; color: var(--muted); display: flex; align-items: center; gap: 0.25rem; }
-  button { padding: 0.75rem 2rem; border-radius: 8px; border: none; background: var(--accent); color: white; font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
-  button:hover { opacity: 0.85; }
-  button:disabled { opacity: 0.4; cursor: not-allowed; }
-  #status { margin-top: 1rem; font-size: 0.875rem; color: var(--muted); }
-  #result { font-size: 0.875rem; line-height: 1.6; max-height: 60vh; overflow-y: auto; padding: 0.25rem; }
-  #result.plain { white-space: pre-wrap; font-family: monospace; }
+
+  /* step 1: url card */
+  .url-row { display: flex; gap: 0.75rem; }
+  .url-row input[type="text"] { flex: 1; padding: 0.85rem 1rem; border-radius: 10px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); font-size: 1rem; }
+  .url-row input[type="text"]:focus { outline: none; border-color: var(--accent); }
+  .url-row input[type="text"].invalid { border-color: var(--err); }
+  .url-row button { padding: 0 1.5rem; border-radius: 10px; border: none; background: var(--accent); color: #fff; font-weight: 700; font-size: 0.95rem; cursor: pointer; white-space: nowrap; transition: opacity 0.2s; }
+  .url-row button:hover { opacity: 0.85; }
+  .url-row button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .url-hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.5rem; }
+
+  /* quick chips */
+  .quick-chips { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.75rem; align-items: center; }
+  .quick-chips .chip-label { font-size: 0.7rem; color: var(--muted); }
+  .chip { font-size: 0.75rem; padding: 0.3rem 0.7rem; border-radius: 20px; border: 1px solid var(--border); color: var(--muted); cursor: pointer; background: transparent; transition: all 0.15s; }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* video preview */
+  .preview-card { display: none; margin-top: 1rem; gap: 1rem; align-items: flex-start; }
+  .preview-card.visible { display: flex; }
+  .preview-thumb { line-height: 0; flex-shrink: 0; }
+  .preview-thumb img { width: 200px; aspect-ratio: 16/9; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); }
+  .preview-info { flex: 1; min-width: 0; }
+  .preview-info h3 { font-size: 1rem; margin-bottom: 0.2rem; color: var(--text); }
+  .preview-info .vid { font-size: 0.78rem; color: var(--muted); font-family: monospace; }
+
+  /* step 2: config card */
+  .config-back { font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+  .config-back strong { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .config-back button { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.8rem; text-decoration: underline; }
+  .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .config-group-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.3rem; }
+  .config-group select, .config-group input[type="text"] { width: 100%; padding: 0.55rem 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); font-size: 0.9rem; }
+  .config-group select:focus, .config-group input[type="text"]:focus { outline: none; border-color: var(--accent); }
+  .toggle-row { display: flex; gap: 1.5rem; align-items: center; padding-top: 0.3rem; }
+  .toggle-row label { font-size: 0.85rem; color: var(--text); display: flex; align-items: center; gap: 0.35rem; cursor: pointer; }
+  .toggle-row input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; }
+  .action-row { display: flex; gap: 0.75rem; margin-top: 1.25rem; align-items: center; }
+  .action-row button { padding: 0.7rem 2.2rem; border-radius: 8px; border: none; background: var(--accent); color: #fff; font-weight: 700; font-size: 0.95rem; cursor: pointer; transition: opacity 0.2s; }
+  .action-row button:hover { opacity: 0.85; }
+  .action-row button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .action-row button.cancel { background: var(--err); }
+  .action-row .hint { font-size: 0.75rem; color: var(--muted); }
+
+  /* progress */
+  .progress-section { display: none; margin-top: 1rem; }
+  .progress-section.visible { display: block; }
+  .progress-bar { width: 100%; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 3px; width: 0%; transition: width 0.4s ease; }
+  .progress-label { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); margin-top: 0.35rem; }
+
+
+  #status { margin-top: 0.75rem; font-size: 0.875rem; }
+  .error { color: var(--err); }
+  .ok { color: var(--ok); }
+  .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.5rem; }
+  .hint.warn { color: #fbbf24; }
+
+  /* step 3: result card */
+  .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); gap: 0.75rem; }
+  .result-header h2 { font-size: 1rem; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .result-actions { display: flex; gap: 0.4rem; flex-shrink: 0; align-items: center; }
+  .result-actions button { padding: 0.4rem 0.9rem; font-size: 0.78rem; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; white-space: nowrap; }
+  .result-actions button:hover { border-color: var(--accent); color: var(--accent); }
+  .result-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .result-actions button.primary:hover { opacity: 0.85; color: #fff; }
+  .font-ctrl { display: flex; gap: 0.2rem; margin-right: 0.15rem; }
+  .font-ctrl button { width: 28px; height: 28px; padding: 0; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 0.85rem; font-weight: 700; cursor: pointer; text-align: center; line-height: 28px; }
+  .font-ctrl button:hover { border-color: var(--accent); color: var(--accent); }
+  button.new-btn { border-color: var(--ok); color: var(--ok); }
+
+  /* output info */
+  #output-info { display: none; align-items: center; gap: 1rem; margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+  #info-thumb img { width: 100px; aspect-ratio: 16/9; border-radius: 6px; object-fit: cover; border: 1px solid var(--border); cursor: pointer; }
+  #info-thumb img:hover { opacity: 0.9; }
+  #info-stats { display: flex; flex-wrap: wrap; gap: 0.4rem; font-size: 0.78rem; color: var(--muted); }
+  #info-stats span { background: var(--input-bg); padding: 0.15rem 0.5rem; border-radius: 4px; border: 1px solid var(--border); }
+
+  /* result text */
+  #result { font-size: 0.95rem; line-height: 1.7; max-height: 65vh; overflow-y: auto; padding: 0.1rem 0; }
+  #result.plain { white-space: pre-wrap; font-family: monospace; font-size: 0.85rem; }
   #result.md { font-family: system-ui, sans-serif; }
   #result.md h1 { font-size: 1.3rem; margin: 0 0 0.75rem; color: var(--accent); }
   #result.md h2 { font-size: 1.15rem; margin: 0.75rem 0 0.4rem; }
@@ -39,76 +121,47 @@
   #result.md hr { border: none; border-top: 1px solid var(--border); margin: 0.75rem 0; }
   #result.md ul { margin: 0.35rem 0 0.35rem 1.5rem; }
   #result.md li { margin: 0.15rem 0; }
-  .error { color: var(--err); }
-  .ok { color: var(--ok); }
-  input[type="text"].invalid { border-color: var(--err); }
-  .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.5rem; }
-  .hint.warn { color: #fbbf24; }
-  button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
-  button.secondary:hover { border-color: var(--accent); }
+  #result.md em { font-style: italic; }
+  #result.md code { font-family: monospace; background: var(--input-bg); padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.9em; border: 1px solid var(--border); }
   .meta-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 0.75rem; font-size: 0.75rem; align-items: flex-start; }
   .meta-chip { background: var(--input-bg); padding: 0.2rem 0.6rem; border-radius: 4px; border: 1px solid var(--border); }
   .meta-chip b { color: var(--muted); font-weight: 600; margin-right: 0.3em; }
   .meta-chip a { color: var(--accent); text-decoration: underline; word-break: break-all; }
-  .video-card { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
-  .video-card-thumb { line-height: 0; }
-  .video-card-thumb img { width: 100%; aspect-ratio: 16/9; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); cursor: pointer; }
-  .video-card-thumb img:hover { opacity: 0.9; }
-  .video-card-info { }
-  .video-card-info h1 { font-size: 1.1rem; margin: 0 0 0.25rem; color: var(--accent); }
-  .video-card-stats { font-size: 0.8rem; color: var(--muted); display: flex; gap: 0.75rem; flex-wrap: wrap; }
-  #output-card .stats { margin: 0.5rem 0; }
   #status a { color: var(--ok); text-decoration: underline; }
   #status a:hover { opacity: 0.8; }
-  .stats { display: none; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; font-size: 0.7rem; color: var(--muted); }
-  .stats span { background: var(--input-bg); padding: 0.15rem 0.5rem; border-radius: 4px; border: 1px solid var(--border); }
-  #result.md em { font-style: italic; }
-  #result.md code { font-family: monospace; background: var(--input-bg); padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.9em; border: 1px solid var(--border); }
-  #log { max-height: 180px; overflow-y: auto; margin-top: 0.75rem; font-size: 0.8rem; font-family: monospace; display: none; }
-  .log-info { color: var(--muted); }
-  .log-success { color: var(--ok); }
-  .log-warn { color: #fbbf24; }
-  .log-error { color: var(--err); }
-  #output-header { display: none; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); gap: 0.75rem; }
-  #output-title { font-size: 1rem; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  #output-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
-  #output-actions button { padding: 0.4rem 1rem; font-size: 0.8rem; }
-  #output-info { display: none; align-items: center; gap: 1rem; margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
-  #info-thumb img { width: 140px; aspect-ratio: 16/9; border-radius: 6px; object-fit: cover; border: 1px solid var(--border); cursor: pointer; }
-  #info-thumb img:hover { opacity: 0.9; }
-  #info-stats { display: flex; flex-wrap: wrap; gap: 0.4rem; font-size: 0.8rem; color: var(--muted); }
-  #info-stats span { background: var(--input-bg); padding: 0.2rem 0.6rem; border-radius: 4px; border: 1px solid var(--border); }
-  button.cancel { background: var(--err); }
+  .download-link { display: inline-block; padding: 0.75rem 2rem; border-radius: 8px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; margin: 0.75rem 0; }
+
+  /* theme & notify */
   .theme-btn { background: none; border: 1px solid var(--border); color: var(--muted); padding: 0.3rem 0.6rem; font-size: 1.1rem; line-height: 1; border-radius: 6px; cursor: pointer; transition: color 0.2s, border-color 0.2s; width: auto; }
   .theme-btn:hover { color: var(--text); border-color: var(--accent); }
   .theme-btn.enabled { color: var(--ok); border-color: var(--ok); }
   .theme-btn.muted { opacity: 0.5; }
-  .spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  .spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; }
   @keyframes spin { to { transform: rotate(360deg); } }
   button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
   @media print {
     body { background: #fff !important; color: #000 !important; padding: 0 !important; }
     .card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
-    #theme-toggle, #log, #output-header, #output-info, #log-toggle, #running-hint, #summarize-hint, .stats, .meta-row, .video-card, button { display: none !important; }
+    #theme-toggle, .steps, .action-row, .config-back, .progress-section, .quick-chips, .url-hint, button { display: none !important; }
     #result { max-height: none !important; overflow: visible !important; }
     a { color: #000 !important; text-decoration: underline; }
   }
   @media (max-width: 600px) {
     body { padding: 1rem; }
-    .row { flex-direction: column; align-items: stretch; }
-    .row label { width: 100%; }
-    .lang-input { width: 100%; }
-    select { width: 100%; }
-    button:not(.theme-btn):not(.secondary) { width: 100%; }
-    #output-header { flex-wrap: wrap; }
-    #output-title { max-width: 100%; }
-    #output-actions { width: 100%; }
-    #output-actions button { flex: 1; }
-    #output-info { flex-direction: column; align-items: flex-start; }
-    #info-thumb img { width: 100%; }
-    .video-card-thumb img { width: 100%; }
+    h1 { font-size: 1.15rem; }
+    .url-row { flex-direction: column; }
+    .url-row button { padding: 0.65rem 1rem; width: 100%; }
+    .preview-card.visible { flex-direction: column; }
+    .preview-thumb img { width: 100%; }
+    .config-grid { grid-template-columns: 1fr; }
+    .action-row { flex-direction: column; align-items: stretch; }
+    .action-row button { width: 100%; }
+    .result-header { flex-direction: column; align-items: flex-start; }
+    .result-actions { width: 100%; flex-wrap: wrap; }
+    .result-actions button { flex: 1; }
     .card { padding: 1rem; }
-    h1 { font-size: 1.25rem; }
+    .toggle-row { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
   }
 </style>
 </head>
@@ -122,31 +175,110 @@
 </noscript>
 <div class="container">
   <h1>&#9733; yttranscript <span style="display:flex;gap:0.4rem;"><button id="theme-toggle" class="theme-btn" title="Toggle theme">&#9788;</button><button id="notify-toggle" class="theme-btn" title="Enable notifications" style="display:none;">&#128276;</button></span></h1>
-  <div class="card">
-    <input type="text" id="url" placeholder="Paste YouTube URL..." />
-    <div class="row">
-      <label>Lang <input type="text" id="lang" list="lang-codes" placeholder="Auto" class="lang-input"><datalist id="lang-codes"><option value="en"><option value="es"><option value="fr"><option value="de"><option value="pt"><option value="it"><option value="ja"><option value="zh"><option value="ko"><option value="ar"><option value="ru"><option value="nl"><option value="pl"><option value="tr"></datalist></label>
-      <label>Format <select id="format"><option value="txt">txt</option><option value="json">json</option><option value="vtt">vtt</option><option value="srt">srt</option><option value="pdf">pdf</option><option value="epub">epub</option><option value="docx">docx</option></select></label>
-      <label><input type="checkbox" id="timestamps"> Timestamps</label>
-      <label><input type="checkbox" id="summarize"> Summarize</label>
-      <input type="text" id="filename" placeholder="Save as (auto)" class="lang-input" style="width:9rem;" aria-label="Save as filename">
-    </div>
-    <div class="row">
-      <button id="btn" onclick="run()">Transcribe</button>
-    </div>
-    <div id="summarize-hint" class="hint warn" style="display:none;">Requires <code>summarize_cmd</code> to be set in config to actually summarize.</div>
-    <div id="lang-badge" class="hint" style="display:none;">🌐 Language: <span id="lang-badge-text"></span></div>
-    <div id="running-hint" class="hint" style="display:none;">⏳ Still working — Whisper can take several minutes for long videos.</div>
-    <div id="status"></div>
-    <button id="log-toggle" class="theme-btn" style="display:none;" onclick="toggleLog()">▼ Logs</button>
-    <div id="log"></div>
+
+  <!-- Steps -->
+  <div class="steps">
+    <div class="step active" id="step1-indicator"><span class="step-num">1</span> Paste URL</div>
+    <div class="step" id="step2-indicator"><span class="step-num">2</span> Configure</div>
+    <div class="step" id="step3-indicator"><span class="step-num">3</span> Read</div>
   </div>
-  <div class="card" id="output-card" style="display:none;">
-    <div id="output-header">
-      <span id="output-title"></span>
-      <div id="output-actions">
+
+  <!-- Step 1: URL input -->
+  <div class="card" id="step1-card">
+    <div class="url-row">
+      <input type="text" id="url" placeholder="Paste YouTube URL…" />
+      <button id="continue-btn" disabled onclick="goStep2()">Continue &#8594;</button>
+    </div>
+    <div class="quick-chips">
+      <span class="chip-label">Quick:</span>
+      <span class="chip" data-fmt="txt">txt</span>
+      <span class="chip" data-fmt="srt">srt</span>
+      <span class="chip" data-fmt="vtt">vtt</span>
+      <span class="chip" data-sum="1">summarize</span>
+    </div>
+    <div id="url-hint" class="url-hint"></div>
+    <div class="preview-card" id="preview-card">
+      <div class="preview-thumb">
+        <img id="preview-img" alt="Video thumbnail" onerror="this.parentElement.style.display='none'" />
+      </div>
+      <div class="preview-info">
+        <h3 id="preview-title">Video preview</h3>
+        <div class="vid" id="preview-vid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Configure + transcribe -->
+  <div class="card" id="step2-card" style="display:none;">
+    <div class="config-back">
+      Configuring: <strong id="config-label"></strong>
+      <button onclick="goStep1()">change</button>
+    </div>
+    <div class="config-grid">
+      <div class="config-group">
+        <div class="config-group-label">Output format</div>
+        <select id="format">
+          <option value="txt">Plain text (.txt)</option>
+          <option value="srt">Subtitles (.srt)</option>
+          <option value="vtt">WebVTT (.vtt)</option>
+          <option value="json">Structured (.json)</option>
+          <option value="pdf">PDF document</option>
+          <option value="epub">EPUB ebook</option>
+          <option value="docx">Word (.docx)</option>
+        </select>
+      </div>
+      <div class="config-group">
+        <div class="config-group-label">Language (optional)</div>
+        <input type="text" id="lang" placeholder="Auto-detect" list="lang-codes" />
+        <datalist id="lang-codes">
+          <option value="en"><option value="es"><option value="fr"><option value="de">
+          <option value="pt"><option value="it"><option value="ja"><option value="zh">
+          <option value="ko"><option value="ar"><option value="ru"><option value="nl">
+          <option value="pl"><option value="tr">
+        </datalist>
+      </div>
+      <div class="config-group">
+        <div class="config-group-label">Save as</div>
+        <input type="text" id="filename" placeholder="Auto-generated filename" />
+      </div>
+      <div class="config-group">
+        <div class="toggle-row">
+          <label><input type="checkbox" id="timestamps" /> Timestamps</label>
+          <label><input type="checkbox" id="summarize" /> Summarize</label>
+        </div>
+      </div>
+    </div>
+    <div class="action-row">
+      <button id="transcribe-btn" onclick="startTranscribe()">Transcribe</button>
+      <button id="cancel-btn" class="cancel" style="display:none;" onclick="cancelTranscribe()">Cancel</button>
+      <span class="hint">or Ctrl+Enter</span>
+    </div>
+    <div id="summarize-hint" class="hint warn" style="display:none;">Requires <code>summarize_cmd</code> in config to actually summarize.</div>
+    <div id="lang-badge" class="hint" style="display:none;">&#127760; Language: <span id="lang-badge-text"></span></div>
+    <div id="running-hint" class="hint" style="display:none;">&#9203; Still working — Whisper can take several minutes for long videos.</div>
+    <div id="status"></div>
+
+    <!-- Progress (during transcription) -->
+    <div class="progress-section" id="progress-section">
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+      <div class="progress-label">
+        <span id="progress-status"></span>
+        <span id="progress-pct">0%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Result -->
+  <div class="card" id="step3-card" style="display:none;">
+    <div class="result-header">
+      <h2 id="result-title"></h2>
+      <div class="result-actions">
+        <div class="font-ctrl">
+          <button onclick="changeFont(-1)" title="Smaller text">A&#8722;</button>
+          <button onclick="changeFont(+1)" title="Larger text">A+</button>
+        </div>
         <button onclick="copyText()" id="copy-btn">Copy</button>
-        <button onclick="downloadFile()" id="dl-btn">Download</button>
+        <button onclick="downloadFile()" id="dl-btn" class="primary">Download</button>
       </div>
     </div>
     <div id="output-info">
@@ -156,15 +288,20 @@
     <div id="result"></div>
   </div>
 </div>
+
 <script>
 let lastResult = null;
 let currentController = null;
+
+/* ── helpers ── */
 function safeGet(key) {
   try { return localStorage.getItem(key); } catch (e) { return null; }
 }
 function safeSet(key, value) {
   try { localStorage.setItem(key, value); } catch (e) {}
 }
+
+/* ── theme ── */
 function setTheme(theme) {
   document.documentElement.classList.toggle('light', theme === 'light');
   document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -175,28 +312,27 @@ function currentTheme() {
   return document.documentElement.classList.contains('light') ? 'light' : 'dark';
 }
 function updateThemeIcon() {
-  const btn = document.getElementById('theme-toggle');
-  if (btn) btn.textContent = currentTheme() === 'light' ? '🌙' : '☀';
+  var btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = currentTheme() === 'light' ? '\uD83C\uDF19' : '\u2600\uFE0F';
 }
 (function initTheme() {
-  const saved = safeGet('theme');
-  if (saved) {
-    setTheme(saved);
-  } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
-    setTheme('light');
-  }
+  var saved = safeGet('theme');
+  if (saved) { setTheme(saved); }
+  else if (window.matchMedia('(prefers-color-scheme: light)').matches) { setTheme('light'); }
   updateThemeIcon();
   document.getElementById('theme-toggle').addEventListener('click', function() {
     setTheme(currentTheme() === 'light' ? 'dark' : 'light');
   });
 })();
+
+/* ── notifications ── */
 (function initNotify() {
-  const btn = document.getElementById('notify-toggle');
+  var btn = document.getElementById('notify-toggle');
   if (!("Notification" in window)) return;
   btn.style.display = 'inline-block';
   function refresh() {
-    const p = Notification.permission;
-    btn.textContent = p === 'granted' ? '\u{1F514}' : p === 'denied' ? '\u{1F507}' : '\u{1F514}';
+    var p = Notification.permission;
+    btn.textContent = p === 'granted' ? '\uD83D\uDD14' : p === 'denied' ? '\uD83D\uDD07' : '\uD83D\uDD14';
     btn.title = p === 'granted' ? 'Notifications enabled'
               : p === 'denied'  ? 'Notifications blocked (enable in browser settings)'
               : 'Enable notifications';
@@ -206,13 +342,13 @@ function updateThemeIcon() {
   btn.addEventListener('click', function() {
     if (Notification.permission === 'default') {
       Notification.requestPermission().then(refresh);
-    } else {
-      refresh();
-    }
+    } else { refresh(); }
   });
   refresh();
 })();
-const FORM_KEY = 'form-state';
+
+/* ── form persistence ── */
+var FORM_KEY = 'form-state';
 function saveForm() {
   safeSet(FORM_KEY, JSON.stringify({
     url: document.getElementById('url').value,
@@ -220,130 +356,252 @@ function saveForm() {
     format: document.getElementById('format').value,
     timestamps: document.getElementById('timestamps').checked,
     summarize: document.getElementById('summarize').checked,
+    filename: document.getElementById('filename').value,
   }));
 }
 function restoreForm() {
-  const raw = safeGet(FORM_KEY);
+  var raw = safeGet(FORM_KEY);
   if (!raw) return;
   try {
-    const s = JSON.parse(raw);
+    var s = JSON.parse(raw);
     if (typeof s.url === 'string') document.getElementById('url').value = s.url;
     if (typeof s.lang === 'string') document.getElementById('lang').value = s.lang;
     if (typeof s.format === 'string') document.getElementById('format').value = s.format;
     if (typeof s.timestamps === 'boolean') document.getElementById('timestamps').checked = s.timestamps;
     if (typeof s.summarize === 'boolean') document.getElementById('summarize').checked = s.summarize;
+    if (typeof s.filename === 'string') document.getElementById('filename').value = s.filename;
   } catch (e) {}
 }
 function initFormPersistence() {
   restoreForm();
-  document.getElementById('url').addEventListener('input', saveForm);
-  document.getElementById('lang').addEventListener('input', saveForm);
-  document.getElementById('format').addEventListener('change', saveForm);
-  document.getElementById('timestamps').addEventListener('change', saveForm);
-  document.getElementById('summarize').addEventListener('change', saveForm);
+  var els = ['url', 'lang', 'format', 'filename'];
+  for (var i = 0; i < els.length; i++) {
+    document.getElementById(els[i]).addEventListener('input', saveForm);
+    document.getElementById(els[i]).addEventListener('change', saveForm);
+  }
+  document.getElementById('timestamps').addEventListener('change', function() { saveForm(); updateQuickChips(); });
+  document.getElementById('summarize').addEventListener('change', function() { saveForm(); updateSummarizeHint(); updateQuickChips(); });
 }
 initFormPersistence();
-const YOUTUBE_URL_RE = /^https?:\/\/(?:[a-z0-9-]+\.)*(?:youtube\.com|youtu\.be|youtube-nocookie\.com)\//i;
-function validateUrl() {
-  const el = document.getElementById('url');
-  const v = el.value.trim();
-  el.classList.toggle('invalid', v !== '' && !YOUTUBE_URL_RE.test(v));
+
+/* ── auto-uncheck summarize for binary formats ── */
+var BINARY_FORMATS = ['pdf', 'epub', 'docx'];
+function syncSummarizeForFormat() {
+  var fmt = document.getElementById('format').value;
+  if (BINARY_FORMATS.indexOf(fmt) !== -1) {
+    var cb = document.getElementById('summarize');
+    if (cb.checked) {
+      cb.checked = false;
+      saveForm();
+      updateSummarizeHint();
+      updateQuickChips();
+    }
+  }
 }
-document.getElementById('url').addEventListener('blur', validateUrl);
+document.getElementById('format').addEventListener('change', function() {
+  saveForm();
+  syncSummarizeForFormat();
+  updateQuickChips();
+});
+syncSummarizeForFormat(); // run on load in case restored format is binary
+
+/* ── URL validation ── */
+var YOUTUBE_URL_RE = /^https?:\/\/(?:[a-z0-9-]+\.)*(?:youtube\.com|youtu\.be|youtube-nocookie\.com)\//i;
+function isValidYoutubeUrl(v) {
+  return YOUTUBE_URL_RE.test(v.trim());
+}
+function extractVideoId(url) {
+  var m = url.match(/(?:watch\?v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+function validateUrl() {
+  var el = document.getElementById('url');
+  var v = el.value.trim();
+  var valid = v === '' || isValidYoutubeUrl(v);
+  el.classList.toggle('invalid', !valid && v !== '');
+  document.getElementById('continue-btn').disabled = !v || !isValidYoutubeUrl(v);
+  updateUrlHint(v);
+  updatePreview(v);
+}
 document.getElementById('url').addEventListener('input', validateUrl);
+document.getElementById('url').addEventListener('blur', validateUrl);
+
+function updateUrlHint(v) {
+  var hint = document.getElementById('url-hint');
+  if (!v) { hint.textContent = ''; return; }
+  if (!isValidYoutubeUrl(v)) {
+    hint.textContent = 'Not a valid YouTube URL.';
+    hint.style.color = 'var(--err)';
+  } else {
+    hint.textContent = '';
+  }
+}
+function updatePreview(v) {
+  var card = document.getElementById('preview-card');
+  var vid = extractVideoId(v);
+  if (vid) {
+    card.classList.add('visible');
+    document.getElementById('preview-img').src = 'https://i.ytimg.com/vi/' + vid + '/mqdefault.jpg';
+    document.getElementById('preview-vid').textContent = 'youtube.com/watch?v=' + vid;
+    document.getElementById('preview-title').textContent = 'Video preview';
+  } else {
+    card.classList.remove('visible');
+  }
+}
+
+/* ── quick chips ── */
+function updateQuickChips() {
+  var fmt = document.getElementById('format').value;
+  var sum = document.getElementById('summarize').checked;
+  var chips = document.querySelectorAll('.chip[data-fmt]');
+  for (var i = 0; i < chips.length; i++) {
+    chips[i].classList.toggle('active', chips[i].dataset.fmt === fmt);
+  }
+  var sumChip = document.querySelector('.chip[data-sum]');
+  if (sumChip) sumChip.classList.toggle('active', sum);
+}
+document.querySelectorAll('.chip[data-fmt]').forEach(function(c) {
+  c.addEventListener('click', function() {
+    document.getElementById('format').value = c.dataset.fmt;
+    syncSummarizeForFormat();
+    saveForm();
+    updateQuickChips();
+  });
+});
+var sumChip = document.querySelector('.chip[data-sum]');
+if (sumChip) {
+  sumChip.addEventListener('click', function() {
+    var cb = document.getElementById('summarize');
+    cb.checked = !cb.checked;
+    saveForm();
+    updateSummarizeHint();
+    updateQuickChips();
+  });
+}
+updateQuickChips();
+
+/* ── summarize hint ── */
 function updateSummarizeHint() {
   document.getElementById('summarize-hint').style.display =
     document.getElementById('summarize').checked ? 'block' : 'none';
 }
-document.getElementById('summarize').addEventListener('change', updateSummarizeHint);
 updateSummarizeHint();
-function escapeHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/* ── step navigation ── */
+function setStep(step) {
+  var s1 = document.getElementById('step1-indicator');
+  var s2 = document.getElementById('step2-indicator');
+  var s3 = document.getElementById('step3-indicator');
+  s1.className = 'step'; s2.className = 'step'; s3.className = 'step';
+  if (step === 1) { s1.classList.add('active'); }
+  if (step === 2) { s1.classList.add('done'); s2.classList.add('active'); }
+  if (step === 3) { s1.classList.add('done'); s2.classList.add('done'); s3.classList.add('active'); }
+  document.getElementById('step1-card').style.display = step === 1 ? '' : 'none';
+  document.getElementById('step2-card').style.display = step === 2 ? '' : 'none';
+  document.getElementById('step3-card').style.display = step === 3 ? '' : 'none';
 }
-function inlineMd(s) {
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
-  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  s = s.replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>');
-  return s;
+
+function goStep1() {
+  setStep(1);
+  document.getElementById('preview-card').classList.remove('visible');
+  clearTranscribeState();
+  validateUrl();
+  setTimeout(function() { document.getElementById('url').focus(); }, 100);
 }
-function renderMarkdown(text) {
-  const t = escapeHtml(text);
-  const blocks = t.split(/\n\n+/);
-  const html = [];
-  for (const block of blocks) {
-    const lines = block.split('\n');
-    const first = lines[0].trim();
-    if (first === '---') { html.push('<hr>'); continue; }
-    const hm = first.match(/^(#{1,3})\s+(.+)$/);
-    if (hm) { html.push('<h' + hm[1].length + '>' + inlineMd(hm[2]) + '</h' + hm[1].length + '>'); continue; }
-    if (first.match(/^[-*]\s/)) {
-      const items = lines.filter(l => l.trim().match(/^[-*]\s/)).map(l =>
-        '<li>' + inlineMd(l.trim().replace(/^[-*]\s/, '')) + '</li>');
-      html.push('<ul>' + items.join('') + '</ul>');
-      continue;
+function goStep2() {
+  var v = document.getElementById('url').value.trim();
+  if (!isValidYoutubeUrl(v)) return;
+  saveForm();
+  setStep(2);
+  var vid = extractVideoId(v);
+  document.getElementById('config-label').textContent = vid ? 'youtube.com/watch?v=' + vid : v;
+  clearTranscribeState();
+  setTimeout(function() { document.getElementById('transcribe-btn').focus(); }, 100);
+}
+
+function clearTranscribeState() {
+  if (currentController) { currentController.abort(); currentController = null; }
+  document.getElementById('transcribe-btn').style.display = '';
+  document.getElementById('transcribe-btn').disabled = false;
+  document.getElementById('cancel-btn').style.display = 'none';
+  document.getElementById('progress-section').classList.remove('visible');
+  document.getElementById('status').innerHTML = '';
+  document.getElementById('running-hint').style.display = 'none';
+  document.getElementById('lang-badge').style.display = 'none';
+  clearHint();
+}
+
+// Click on completed step to go back
+document.getElementById('step1-indicator').addEventListener('click', function() {
+  if (this.classList.contains('done') || this.classList.contains('active')) {
+    if (document.getElementById('step2-card').style.display !== 'none' ||
+        document.getElementById('step3-card').style.display !== 'none') {
+      goStep1();
     }
-    const metaRe = /^\*\*([A-Z][A-Za-z]*):\*\*\s*(.+?)\s*$/;
-    const nonEmpty = lines.filter(l => l.trim());
-    const metaMatches = nonEmpty.map(l => l.match(metaRe)).filter(Boolean);
-    if (metaMatches.length === nonEmpty.length && metaMatches.length > 0) {
-      let titleHtml = '';
-      if (html.length > 0 && /^<h[1-3]>/.test(html[html.length - 1])) {
-        titleHtml = html.pop();
-      }
-      const chips = metaMatches.filter(m => m[1] !== 'URL' && m[1] !== 'Duration' && m[1] !== 'Transcribed').map(m => {
-        const label = m[1];
-        let val = m[2];
-        if (/^https?:\/\//.test(val)) {
-          val = '<a href="' + val + '" target="_blank" rel="noopener noreferrer">' + val + '</a>';
-        }
-        return '<span class="meta-chip"><b>' + label + ':</b> ' + val + '</span>';
-      });
-      if (titleHtml) html.push(titleHtml);
-      if (chips.length) html.push('<div class="meta-row">' + chips.join('') + '</div>');
-      continue;
-    }
-    const joined = lines.map(l => l.endsWith('  ') ? l.slice(0,-2) + '<br>' : l).join(' ');
-    html.push('<p>' + inlineMd(joined) + '</p>');
   }
-  return html.join('\n');
+});
+
+/* ── escape / ctrl+enter ── */
+window.addEventListener('beforeunload', function(e) {
+  if (currentController) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && currentController) {
+    e.preventDefault();
+    cancelTranscribe();
+  } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    var step2visible = document.getElementById('step2-card').style.display !== 'none';
+    if (step2visible && !currentController) {
+      startTranscribe();
+    } else if (!step2visible) {
+      goStep2();
+    }
+  }
+});
+
+/* ── status ── */
+function setStatus(text, cls) {
+  var status = document.getElementById('status');
+  status.textContent = '';
+  var span = document.createElement('span');
+  if (cls) span.className = cls;
+  span.textContent = text;
+  status.appendChild(span);
 }
-function addLog(message, type) {
-  const log = document.getElementById('log');
-  log.style.display = 'block';
-  document.getElementById('log-toggle').style.display = 'inline-block';
-  const div = document.createElement('div');
-  div.className = 'log-' + type;
-  div.textContent = message;
-  log.appendChild(div);
-  log.scrollTop = log.scrollHeight;
+
+/* ── progress ── */
+var _progressEvents = 0;
+function bumpProgress(msg) {
+  var section = document.getElementById('progress-section');
+  var fill = document.getElementById('progress-fill');
+  var status = document.getElementById('progress-status');
+  var pct = document.getElementById('progress-pct');
+  section.classList.add('visible');
+  _progressEvents++;
+  var p = Math.min(10 + _progressEvents * 7, 92);
+  fill.style.width = p + '%';
+  pct.textContent = p + '%';
+  if (msg) status.textContent = msg;
 }
-function toggleLog() {
-  const log = document.getElementById('log');
-  const btn = document.getElementById('log-toggle');
-  const hidden = log.style.display === 'none';
-  log.style.display = hidden ? 'block' : 'none';
-  btn.textContent = hidden ? '▼ Logs' : '▶ Logs';
+function finishProgress() {
+  var fill = document.getElementById('progress-fill');
+  var pct = document.getElementById('progress-pct');
+  var status = document.getElementById('progress-status');
+  fill.style.width = '100%';
+  pct.textContent = '100%';
+  status.textContent = 'Done \u2713';
 }
-function showStats(text) {
-  const vcStats = document.getElementById('video-card-stats');
-  if (!vcStats) return;
-  if (!text) { vcStats.style.display = 'none'; vcStats.innerHTML = ''; return; }
-  const words = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
-  const minutes = Math.max(1, Math.round(words / 200));
-  const durMatch = text.match(/\*\*Duration:\*\*\s*(.+)/);
-  const dur = durMatch ? durMatch[1].trim() : '';
-  const parts = [];
-  if (dur) parts.push('<span>\u23F1\uFE0F ' + dur + '</span>');
-  parts.push('<span>\uD83D\uDCDD ' + words.toLocaleString() + ' words</span>');
-  parts.push('<span>\uD83D\uDCD6 ' + minutes + ' min read</span>');
-  vcStats.innerHTML = parts.join('');
-  vcStats.style.display = 'flex';
-}
-let hintTimer = null;
+
+/* ── hint timer ── */
+var hintTimer = null;
 function startHintTimer() {
   clearTimeout(hintTimer);
   document.getElementById('running-hint').style.display = 'none';
-  hintTimer = setTimeout(() => {
+  hintTimer = setTimeout(function() {
     if (currentController) {
       document.getElementById('running-hint').style.display = 'block';
     }
@@ -354,37 +612,16 @@ function clearHint() {
   hintTimer = null;
   document.getElementById('running-hint').style.display = 'none';
 }
-window.addEventListener('beforeunload', e => {
-  if (currentController) {
-    e.preventDefault();
-    e.returnValue = '';
-  }
-});
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && currentController) {
-    e.preventDefault();
-    currentController.abort();
-  } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-    e.preventDefault();
-    run();
-  }
-});
-function setStatus(text, cls) {
-  const status = document.getElementById('status');
-  status.textContent = '';
-  const span = document.createElement('span');
-  if (cls) span.className = cls;
-  span.textContent = text;
-  status.appendChild(span);
-}
-let _origTitle = document.title;
-let _titleTimer = null;
+
+/* ── tab title flash ── */
+var _origTitle = document.title;
+var _titleTimer = null;
 function flashTabTitle(title) {
   if (document.hasFocus()) return;
   clearTimeout(_titleTimer);
   _origTitle = document.title;
-  document.title = '(\u2713) ' + (title || 'Transcripci\u00f3n lista');
-  const restore = () => {
+  document.title = '(\u2713) ' + (title || 'Transcript ready');
+  var restore = function() {
     document.title = _origTitle;
     window.removeEventListener('focus', restore);
     clearTimeout(_titleTimer);
@@ -392,187 +629,320 @@ function flashTabTitle(title) {
   window.addEventListener('focus', restore);
   _titleTimer = setTimeout(restore, 15000);
 }
+
+/* ── notification ── */
 function notifyDone(title, videoUrl) {
   flashTabTitle(title);
   if (!("Notification" in window) || Notification.permission !== "granted") return;
-  let icon = "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text x=%228%22 y=%2213%22 font-size=%2214%22 text-anchor=%22middle%22 fill=%22%237c3aed%22>%E2%98%85</text></svg>";
+  var icon = "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text x=%228%22 y=%2213%22 font-size=%2214%22 text-anchor=%22middle%22 fill=%22%237c3aed%22>%E2%98%85</text></svg>";
   if (videoUrl) {
-    const vid = videoUrl.match(/(?:watch\?v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
+    var vid = videoUrl.match(/(?:watch\?v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
     if (vid) icon = "https://i.ytimg.com/vi/" + vid[1] + "/hqdefault.jpg";
   }
-  const n = new Notification("\u2713 Transcripci\u00f3n lista", {
+  var n = new Notification("\u2713 Transcript ready", {
     body: title || "yttranscript",
     icon: icon
   });
-  n.onclick = () => { window.focus(); n.close(); };
+  n.onclick = function() { window.focus(); n.close(); };
 }
+
+/* ── log ── */
+function addLog(message, type) {
+}
+
+/* ── markdown rendering ── */
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function inlineMd(s) {
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  return s;
+}
+function renderMarkdown(text) {
+  var t = escapeHtml(text);
+  var blocks = t.split(/\n\n+/);
+  var html = [];
+  for (var i = 0; i < blocks.length; i++) {
+    var block = blocks[i];
+    var lines = block.split('\n');
+    var first = lines[0].trim();
+    if (first === '---') { html.push('<hr>'); continue; }
+    var hm = first.match(/^(#{1,3})\s+(.+)$/);
+    if (hm) { html.push('<h' + hm[1].length + '>' + inlineMd(hm[2]) + '</h' + hm[1].length + '>'); continue; }
+    if (first.match(/^[-*]\s/)) {
+      var items = [];
+      for (var j = 0; j < lines.length; j++) {
+        var l = lines[j].trim();
+        if (l.match(/^[-*]\s/)) {
+          items.push('<li>' + inlineMd(l.replace(/^[-*]\s/, '')) + '</li>');
+        }
+      }
+      html.push('<ul>' + items.join('') + '</ul>');
+      continue;
+    }
+    var metaRe = /^\*\*([A-Z][A-Za-z]*):\*\*\s*(.+?)\s*$/;
+    var nonEmpty = [];
+    for (var k = 0; k < lines.length; k++) { if (lines[k].trim()) nonEmpty.push(lines[k]); }
+    var metaMatches = [];
+    for (var m = 0; m < nonEmpty.length; m++) { var mm = nonEmpty[m].match(metaRe); if (mm) metaMatches.push(mm); }
+    if (metaMatches.length === nonEmpty.length && metaMatches.length > 0) {
+      var titleHtml = '';
+      if (html.length > 0 && /^<h[1-3]>/.test(html[html.length - 1])) {
+        titleHtml = html.pop();
+      }
+      var chips = [];
+      for (var n = 0; n < metaMatches.length; n++) {
+        var label = metaMatches[n][1];
+        var val = metaMatches[n][2];
+        if (label === 'URL' || label === 'Duration') continue;
+        if (/^https?:\/\//.test(val)) {
+          val = '<a href="' + val + '" target="_blank" rel="noopener noreferrer">' + val + '</a>';
+        }
+        chips.push('<span class="meta-chip"><b>' + label + ':</b> ' + val + '</span>');
+      }
+      if (titleHtml) html.push(titleHtml);
+      if (chips.length) html.push('<div class="meta-row">' + chips.join('') + '</div>');
+      continue;
+    }
+    var joined = '';
+    for (var p = 0; p < lines.length; p++) {
+      joined += (p > 0 ? ' ' : '') + (lines[p].endsWith('  ') ? lines[p].slice(0, -2) + '<br>' : lines[p]);
+    }
+    html.push('<p>' + inlineMd(joined) + '</p>');
+  }
+  return html.join('\n');
+}
+
+/* ── metadata extraction ── */
 function extractMetadata(text) {
-  const blocks = text.split(/\n\n+/);
-  const meta = {};
-  let metaIdx = -1;
-  let headingIdx = -1;
-  const metaRe = /^\*\*([A-Za-z]+):\*\*\s*(.+?)\s*$/;
-  for (let i = 0; i < blocks.length; i++) {
-    const lines = blocks[i].split('\n').filter(l => l.trim());
-    const matches = lines.map(l => l.match(metaRe)).filter(Boolean);
+  var blocks = text.split(/\n\n+/);
+  var meta = {};
+  var metaIdx = -1;
+  var headingIdx = -1;
+  var metaRe = /^\*\*([A-Za-z]+):\*\*\s*(.+?)\s*$/;
+  for (var i = 0; i < blocks.length; i++) {
+    var lines = blocks[i].split('\n').filter(function(l) { return l.trim(); });
+    var matches = [];
+    for (var j = 0; j < lines.length; j++) { var m = lines[j].match(metaRe); if (m) matches.push(m); }
     if (matches.length === lines.length && matches.length > 0) {
-      for (const m of matches) meta[m[1]] = m[2];
+      for (var k = 0; k < matches.length; k++) { meta[matches[k][1]] = matches[k][2]; }
       metaIdx = i;
       if (i > 0 && /^#{1,3}\s+/.test(blocks[i - 1].trim())) headingIdx = i - 1;
       break;
     }
   }
   if (metaIdx === -1) return { meta: null, cleanText: text };
-  const removeFrom = headingIdx >= 0 ? headingIdx : metaIdx;
-  const cleanText = blocks.slice(removeFrom + 1).join('\n\n');
-  let thumbUrl = '';
+  var removeFrom = headingIdx >= 0 ? headingIdx : metaIdx;
+  var cleanText = blocks.slice(removeFrom + 1).join('\n\n');
+  var thumbUrl = '';
   if (meta.URL) {
-    const vid = meta.URL.match(/(?:watch\?v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
+    var vid = meta.URL.match(/(?:watch\?v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
     if (vid) thumbUrl = 'https://i.ytimg.com/vi/' + vid[1] + '/mqdefault.jpg';
   }
-  const words = cleanText.trim() ? cleanText.trim().split(/\s+/).filter(Boolean).length : 0;
-  const readMin = Math.max(1, Math.round(words / 200));
+  var words = cleanText.trim() ? cleanText.trim().split(/\s+/).filter(Boolean).length : 0;
+  var readMin = Math.max(1, Math.round(words / 200));
   return {
     meta: { url: meta.URL || '', duration: meta.Duration || '', size: meta.Size || '', thumbUrl: thumbUrl, words: words, readMin: readMin },
     cleanText: cleanText
   };
 }
 function renderOutputInfo(meta) {
-  const info = document.getElementById('output-info');
-  const thumb = document.getElementById('info-thumb');
-  const stats = document.getElementById('info-stats');
+  var info = document.getElementById('output-info');
+  var thumb = document.getElementById('info-thumb');
+  var stats = document.getElementById('info-stats');
   if (meta.thumbUrl) {
     thumb.innerHTML = '<a href="' + escapeHtml(meta.url) + '" target="_blank" rel="noopener noreferrer">' +
       '<img src="' + escapeHtml(meta.thumbUrl) + '" alt="Thumbnail" onerror="this.parentElement.style.display=\'none\'"></a>';
   } else {
     thumb.innerHTML = '';
   }
-  const parts = [];
+  var parts = [];
   if (meta.duration) parts.push('\u23F1\uFE0F ' + escapeHtml(meta.duration));
   parts.push('\uD83D\uDCDD ' + meta.words.toLocaleString() + ' words');
   parts.push('\uD83D\uDCD6 ~' + meta.readMin + ' min read');
   if (meta.size) parts.push('\uD83D\uDDC4\uFE0F ' + escapeHtml(meta.size));
-  stats.innerHTML = parts.map(p => '<span>' + p + '</span>').join('');
+  stats.innerHTML = parts.map(function(p) { return '<span>' + p + '</span>'; }).join('');
   info.style.display = 'flex';
 }
-async function run() {
-  const btn = document.getElementById('btn');
-  if (currentController) {
-    currentController.abort();
-    return;
+
+/* ── font size ── */
+var FONT_KEY = 'font-size';
+function getFontSize() {
+  var s = safeGet(FONT_KEY);
+  return s ? parseInt(s, 10) : 16;
+}
+function applyFontSize() {
+  var fz = getFontSize();
+  var el = document.getElementById('result');
+  if (el.className === 'md') {
+    el.style.fontSize = fz + 'px';
+  } else if (el.className === 'plain') {
+    el.style.fontSize = (fz - 2) + 'px';
   }
-  const url = document.getElementById('url').value.trim();
+}
+function changeFont(d) {
+  var fz = getFontSize();
+  fz = Math.max(12, Math.min(28, fz + d * 2));
+  safeSet(FONT_KEY, String(fz));
+  applyFontSize();
+}
+
+/* ── main: start transcription ── */
+function startTranscribe() {
+  var url = document.getElementById('url').value.trim();
   if (!url) return;
-  const status = document.getElementById('status');
-  const result = document.getElementById('result');
-  const outputCard = document.getElementById('output-card');
-  const outputHeader = document.getElementById('output-header');
-  const log = document.getElementById('log');
-  const fmt = document.getElementById('format').value;
-  const summarize = document.getElementById('summarize').checked;
-  log.innerHTML = '';
-  log.style.display = 'none';
-  const logBtn = document.getElementById('log-toggle');
-  logBtn.style.display = 'none';
-  logBtn.textContent = '▼ Logs';
-  document.getElementById('output-info').style.display = 'none';
-  document.getElementById('lang-badge').style.display = 'none';
-  result.textContent = '';
-  outputCard.style.display = 'none';
-  outputHeader.style.display = 'none';
-  status.innerHTML = '<span class="spinner"></span> Processing...';
-  btn.textContent = 'Cancel';
-  btn.className = 'cancel';
-  const requestedLang = document.getElementById('lang').value.trim();
-  const params = new URLSearchParams({ url });
+  clearTranscribeState();
+  document.getElementById('transcribe-btn').style.display = 'none';
+  document.getElementById('cancel-btn').style.display = '';
+  document.getElementById('step3-card').style.display = 'none';
+  setStep(2);
+
+  var fmt = document.getElementById('format').value;
+  var summarize = document.getElementById('summarize').checked;
+  var requestedLang = document.getElementById('lang').value.trim();
+  var params = new URLSearchParams({ url: url });
   if (requestedLang) params.set('lang', requestedLang);
   params.set('format', fmt);
   if (document.getElementById('timestamps').checked) params.set('timestamps', '1');
   if (summarize) params.set('summarize', '1');
-  const controller = new AbortController();
+
+  _progressEvents = 0;
+  document.getElementById('progress-fill').style.width = '0%';
+  document.getElementById('progress-pct').textContent = '0%';
+  document.getElementById('progress-status').textContent = 'Starting…';
+  document.getElementById('progress-section').classList.add('visible');
+
+  var controller = new AbortController();
   currentController = controller;
   startHintTimer();
-  try {
-    const res = await fetch('/api?' + params, { signal: controller.signal });
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let idx;
-      while ((idx = buffer.indexOf('\n\n')) !== -1) {
-        const raw = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        if (!raw.startsWith('data: ')) continue;
-        let data;
-        try { data = JSON.parse(raw.slice(6)); }
-        catch (e) { addLog('Malformed event from server', 'warn'); continue; }
-        if (!data || typeof data.type !== 'string') continue;
-        if (data.type === 'done') {
-          status.innerHTML = '<span class="ok">✓ Done</span>';
-          outputCard.style.display = 'block';
-          outputHeader.style.display = 'flex';
-          document.getElementById('output-title').textContent = data.title || 'transcript';
-          lastResult = { text: data.text || '', filename: data.filename || 'transcript.txt', url: url };
-          if (data.download) {
-            document.getElementById('output-info').style.display = 'none';
-            result.className = 'md';
-            const customFn = document.getElementById('filename').value.trim();
-            const dlFn = customFn || data.filename;
-            result.innerHTML = '<p style="margin:1rem 0"><a href="' + escapeHtml(data.download) + '" download="' + escapeHtml(dlFn) + '" style="display:inline-block;padding:0.75rem 2rem;border-radius:8px;background:var(--accent);color:white;text-decoration:none;font-weight:600;">\u2B07\uFE0F Download ' + escapeHtml(dlFn) + '</a></p>';
-            lastResult.downloadUrl = data.download;
-          } else if ((fmt === 'txt' || summarize) && fmt !== 'json' && fmt !== 'vtt' && fmt !== 'srt') {
-            const { meta, cleanText } = extractMetadata(data.text);
-            if (meta && meta.thumbUrl) {
-              renderOutputInfo(meta);
+
+  fetch('/api?' + params, { signal: controller.signal }).then(function(res) {
+    var reader = res.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    function pump() {
+      reader.read().then(function(result) {
+        var done = result.done, value = result.value;
+        if (done) return;
+        buffer += decoder.decode(value, { stream: true });
+        var idx;
+        while ((idx = buffer.indexOf('\n\n')) !== -1) {
+          var raw = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          if (!raw.startsWith('data: ')) continue;
+          var data;
+          try { data = JSON.parse(raw.slice(6)); }
+          catch (e) { addLog('Malformed event from server', 'warn'); continue; }
+          if (!data || typeof data.type !== 'string') continue;
+
+          if (data.type === 'done') {
+            console.log('[yttranscript] done event:', JSON.stringify(data));
+            finishProgress();
+            setStep(3);
+            console.log('[yttranscript] step3-card display:', document.getElementById('step3-card').style.display);
+            document.getElementById('transcribe-btn').style.display = '';
+            document.getElementById('cancel-btn').style.display = 'none';
+            currentController = null;
+            clearHint();
+            document.getElementById('progress-section').classList.remove('visible');
+            document.getElementById('result-title').textContent = data.title || 'transcript';
+            lastResult = { text: data.text || '', filename: data.filename || 'transcript.txt', url: url };
+
+            if (data.download) {
+              console.log('[yttranscript] binary format, download URL:', data.download);
+              document.getElementById('output-info').style.display = 'none';
+              document.getElementById('result').className = 'md';
+              var customFn = document.getElementById('filename').value.trim();
+              var dlFn = customFn || data.filename;
+              document.getElementById('result').innerHTML = '<p><a href="' + escapeHtml(data.download) + '" download="' + escapeHtml(dlFn) + '" class="download-link">\u2B07\uFE0F Download ' + escapeHtml(dlFn) + '</a></p>';
+              lastResult.downloadUrl = data.download;
+            } else if ((fmt === 'txt' || summarize) && fmt !== 'json' && fmt !== 'vtt' && fmt !== 'srt') {
+              var extracted = extractMetadata(data.text);
+              if (extracted.meta && extracted.meta.thumbUrl) {
+                renderOutputInfo(extracted.meta);
+              } else {
+                document.getElementById('output-info').style.display = 'none';
+              }
+              document.getElementById('result').className = 'md';
+              document.getElementById('result').innerHTML = renderMarkdown(extracted.cleanText);
             } else {
               document.getElementById('output-info').style.display = 'none';
+              document.getElementById('result').className = 'plain';
+              document.getElementById('result').textContent = data.text;
             }
-            result.className = 'md';
-            result.innerHTML = renderMarkdown(cleanText);
+            applyFontSize();
+
+            if (requestedLang) {
+              document.getElementById('lang-badge-text').textContent = requestedLang;
+              document.getElementById('lang-badge').style.display = 'block';
+            }
+            notifyDone(data.title, url);
+          } else if (data.type === 'error') {
+            console.log('[yttranscript] error event:', data.message);
+            finishProgress();
+            currentController = null;
+            clearHint();
+            document.getElementById('transcribe-btn').style.display = '';
+            document.getElementById('transcribe-btn').disabled = false;
+            document.getElementById('cancel-btn').style.display = 'none';
+            document.getElementById('progress-section').classList.remove('visible');
+            setStatus(data.message, 'error');
           } else {
-            document.getElementById('output-info').style.display = 'none';
-            result.className = 'plain';
-            result.textContent = data.text;
+            addLog(data.message, data.type);
+            bumpProgress(data.message);
           }
-          if (requestedLang) {
-            document.getElementById('lang-badge-text').textContent = requestedLang;
-            document.getElementById('lang-badge').style.display = 'block';
-          }
-          notifyDone(data.title, url);
-        } else if (data.type === 'error') {
-          setStatus(data.message, 'error');
-        } else {
-          addLog(data.message, data.type);
         }
-      }
+        pump();
+      }).catch(function(e) {
+        if (e.name !== 'AbortError') {
+          addLog('Stream error: ' + e.message, 'error');
+        }
+      });
     }
-  } catch (e) {
+    pump();
+  }).catch(function(e) {
     if (e.name === 'AbortError') {
       setStatus('Cancelled.', 'error');
     } else {
       setStatus('Request failed: ' + e.message, 'error');
     }
-  }
-  currentController = null;
-  clearHint();
-  btn.textContent = 'Transcribe';
-  btn.className = '';
+    currentController = null;
+    clearHint();
+    document.getElementById('transcribe-btn').style.display = '';
+    document.getElementById('cancel-btn').style.display = 'none';
+    document.getElementById('progress-section').classList.remove('visible');
+  });
 }
-document.getElementById('url').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
-async function copyText() {
-  const result = document.getElementById('result');
-  const text = result.className === 'md' ? result.innerText : result.textContent;
+
+function cancelTranscribe() {
+  if (currentController) {
+    currentController.abort();
+    currentController = null;
+  }
+  clearHint();
+  document.getElementById('transcribe-btn').style.display = '';
+  document.getElementById('transcribe-btn').disabled = false;
+  document.getElementById('cancel-btn').style.display = 'none';
+  document.getElementById('progress-section').classList.remove('visible');
+  setStatus('Cancelled.', 'error');
+}
+
+/* ── copy / download ── */
+function copyText() {
+  var result = document.getElementById('result');
+  var text = result.className === 'md' ? result.innerText : result.textContent;
   if (!text) return;
-  const btn = document.getElementById('copy-btn');
+  var btn = document.getElementById('copy-btn');
   try {
-    await navigator.clipboard.writeText(text);
-    btn.textContent = 'Copied!';
+    navigator.clipboard.writeText(text).then(function() {
+      btn.textContent = 'Copied!';
+      setTimeout(function() { btn.textContent = 'Copy'; }, 1500);
+    });
   } catch (e) {
     try {
-      const ta = document.createElement('textarea');
+      var ta = document.createElement('textarea');
       ta.value = text;
       ta.style.position = 'fixed';
       ta.style.opacity = '0';
@@ -580,34 +950,47 @@ async function copyText() {
       ta.select();
       btn.textContent = document.execCommand('copy') ? 'Copied!' : 'Copy failed';
       document.body.removeChild(ta);
-    } catch (e2) {
-      btn.textContent = 'Copy failed';
-    }
+      setTimeout(function() { btn.textContent = 'Copy'; }, 1500);
+    } catch (e2) { btn.textContent = 'Copy failed'; }
   }
-  setTimeout(() => btn.textContent = 'Copy', 1500);
 }
+
 function downloadFile() {
   if (!lastResult) return;
   if (lastResult.downloadUrl) {
-    const a = document.createElement('a');
+    var a = document.createElement('a');
     a.href = lastResult.downloadUrl;
-    const customFn = document.getElementById('filename').value.trim();
+    var customFn = document.getElementById('filename').value.trim();
     a.download = customFn || lastResult.filename;
     a.click();
     return;
   }
-  const ext = lastResult.filename.split('.').pop();
-  const mime = ext === 'json' ? 'application/json' : ext === 'vtt' ? 'text/vtt' : 'text/plain';
-  const blob = new Blob([lastResult.text], { type: mime + ';charset=utf-8' });
-  const objectUrl = URL.createObjectURL(blob);
-  const customFn = document.getElementById('filename').value.trim();
-  const finalFn = customFn || lastResult.filename;
-  const a = document.createElement('a');
+  var ext = lastResult.filename.split('.').pop();
+  var mime = ext === 'json' ? 'application/json' : ext === 'vtt' ? 'text/vtt' : 'text/plain';
+  var blob = new Blob([lastResult.text], { type: mime + ';charset=utf-8' });
+  var objectUrl = URL.createObjectURL(blob);
+  var customFn = document.getElementById('filename').value.trim();
+  var finalFn = customFn || lastResult.filename;
+  var a = document.createElement('a');
   a.href = objectUrl;
   a.download = finalFn;
   a.click();
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  setTimeout(function() { URL.revokeObjectURL(objectUrl); }, 1000);
 }
+
+/* ── init ── */
+document.getElementById('url').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    var step2visible = document.getElementById('step2-card').style.display !== 'none';
+    if (step2visible && !currentController) {
+      startTranscribe();
+    } else {
+      goStep2();
+    }
+  }
+});
+validateUrl();
+restoreForm();
 </script>
 </body>
 </html>
