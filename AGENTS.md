@@ -17,11 +17,12 @@ pytest tests/test_cli.py::test_parser_has_url_positional
 
 ## Version bumps
 
-Version is defined in **three** places — all must match:
+Version is defined in **four** places — all must match:
 
 1. `yttranscript/_version.py`
 2. `pyproject.toml` (`version` field)
 3. `Makefile` (`VERSION` variable)
+4. `PKGBUILD` (`pkgver` variable)
 
 ## Architecture
 
