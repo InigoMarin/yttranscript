@@ -6,6 +6,7 @@ require Pandoc itself (no Typst).
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import tempfile
@@ -28,7 +29,7 @@ def _build_frontmatter(video_info: dict) -> str:
     source = "Whisper" if video_info.get("whisper") else "YouTube subtitles"
 
     lines = ["---"]
-    lines.append(f"title: {video_info.get('title', 'unknown')}")
+    lines.append(f"title: {json.dumps(video_info.get('title', 'unknown'))}")
     url = video_info.get("url", "")
     if url:
         lines.append(f"url: {url}")

@@ -10,7 +10,7 @@ from typing import Callable, Optional
 
 from . import log
 from .log import info, success, warn, log_context
-from .util import run, is_youtube_url, is_playlist_url, TranscriptError
+from .util import run, is_youtube_url, is_playlist_url, sanitize_filename, TranscriptError
 from .vtt import (
     vtt_to_json,
     vtt_to_text,
@@ -68,17 +68,18 @@ def _render_output(
         else:
             output_dir.mkdir(parents=True, exist_ok=True)
             full_text = format_video_header(video_info) + summary + "\n"
+            safe_title = sanitize_filename(video_info.get('title', 'transcript'))
             if fmt == "pdf":
-                out = output_dir / f"{video_info.get('title', 'transcript')}.pdf"
+                out = output_dir / f"{safe_title}.pdf"
                 markdown_to_pdf(summary, out, video_info=video_info)
             elif fmt == "epub":
-                out = output_dir / f"{video_info.get('title', 'transcript')}.epub"
+                out = output_dir / f"{safe_title}.epub"
                 markdown_to_epub(summary, out, video_info=video_info)
             elif fmt == "docx":
-                out = output_dir / f"{video_info.get('title', 'transcript')}.docx"
+                out = output_dir / f"{safe_title}.docx"
                 markdown_to_docx(summary, out, video_info=video_info)
             else:
-                out = output_dir / f"{video_info.get('title', 'transcript')}.txt"
+                out = output_dir / f"{safe_title}.txt"
                 out.write_text(full_text, encoding="utf-8")
             success(f"Saved: {out}")
         return (out, summary)

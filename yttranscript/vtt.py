@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import sys
@@ -31,13 +32,7 @@ def _seconds_to_ts(total: int) -> str:
 def _clean_vtt_text(text: str) -> str:
     """Remove HTML tags and decode entities."""
     text = re.sub(r"<[^>]*>", "", text)
-    text = (
-        text.replace("&amp;", "&")
-        .replace("&gt;", ">")
-        .replace("&lt;", "<")
-        .replace("&#39;", "'")
-        .replace("&quot;", '"')
-    )
+    text = html.unescape(text)
     return text.strip()
 
 
