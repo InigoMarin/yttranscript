@@ -215,6 +215,12 @@ def process_video(
             info("Fetching video metadata...")
             metadata = get_video_metadata(url)
 
+            if metadata.get("is_live"):
+                raise TranscriptError(
+                    "This is a live stream. Subtitles are not available until "
+                    "the stream ends. Try again after the broadcast finishes."
+                )
+
             # Auto-detect language if not specified
             if lang is None:
                 lang = metadata.get("language")

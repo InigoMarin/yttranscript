@@ -113,6 +113,7 @@ def get_video_metadata(url: str) -> dict:
         "language": None,
         "channel": "",
         "upload_date": "",
+        "is_live": False,
     }
     if result.returncode != 0:
         return fallback
@@ -152,6 +153,8 @@ def get_video_metadata(url: str) -> dict:
     if len(upload_date_raw) == 8:
         upload_date = f"{upload_date_raw[:4]}-{upload_date_raw[4:6]}-{upload_date_raw[6:8]}"
 
+    is_live = data.get("is_live") or data.get("live_status") == "is_live"
+
     return {
         "title": title,
         "sanitized_title": sanitize_filename(title),
@@ -160,6 +163,7 @@ def get_video_metadata(url: str) -> dict:
         "language": language,
         "channel": channel,
         "upload_date": upload_date,
+        "is_live": is_live,
     }
 
 
