@@ -362,7 +362,7 @@ def test_process_video_subtitle_success(mock_pipeline, tmp_path):
     mock_pipeline["try_sub"].side_effect = fake_sub
 
     result = process_video(VTT_URL, output_dir=str(out), work_dir=str(work))
-    assert result == ("test_video", None)
+    assert result[0] == "test_video" and result[1] is None
     assert (out / "test_video.txt").exists()
     # Whisper was NOT called
     mock_pipeline["whisper"].assert_not_called()
@@ -381,7 +381,7 @@ def test_process_video_subtitle_success_explicit_output(mock_pipeline, tmp_path)
 
     result = process_video(VTT_URL, output="my_custom_name",
                            output_dir=str(out), work_dir=str(work))
-    assert result == ("my_custom_name", None)
+    assert result[0] == "my_custom_name" and result[1] is None
     assert (out / "my_custom_name.txt").exists()
 
 
@@ -396,7 +396,7 @@ def test_process_video_subtitle_uses_combined_mode(mock_pipeline, tmp_path):
     mock_pipeline["try_sub"].side_effect = fake_sub
 
     result = process_video(VTT_URL, work_dir=str(work), output_dir=str(tmp_path))
-    assert result == ("test_video", None)
+    assert result[0] == "test_video" and result[1] is None
     call_kwargs = mock_pipeline["try_sub"].call_args.kwargs
     assert call_kwargs.get("try_both") is True
 
@@ -416,7 +416,7 @@ def test_process_video_subtitle_tries_multiple_variants(mock_pipeline, tmp_path)
     mock_pipeline["try_sub"].side_effect = fake_sub
 
     result = process_video(VTT_URL, work_dir=str(work), output_dir=str(tmp_path))
-    assert result == ("test_video", None)
+    assert result[0] == "test_video" and result[1] is None
     assert call_count["n"] > 1
 
 
@@ -434,7 +434,7 @@ def test_process_video_whisper_fallback_success(mock_pipeline, tmp_path):
     mock_pipeline["whisper"].side_effect = fake_whisper
 
     result = process_video(VTT_URL, output_dir=str(out), work_dir=str(work))
-    assert result == ("test_video", None)
+    assert result[0] == "test_video" and result[1] is None
     assert (out / "test_video.txt").exists()
     mock_pipeline["whisper"].assert_called_once()
 
@@ -461,7 +461,7 @@ def test_process_video_force_whisper(mock_pipeline, tmp_path):
 
     result = process_video(VTT_URL, force_whisper=True,
                            output_dir=str(out), work_dir=str(work))
-    assert result == ("test_video", None)
+    assert result[0] == "test_video" and result[1] is None
     mock_pipeline["try_sub"].assert_not_called()
     mock_pipeline["whisper"].assert_called_once()
 
@@ -520,7 +520,7 @@ def test_process_video_default_output_dir_is_cwd(mock_pipeline, isolated_cwd):
     mock_pipeline["try_sub"].side_effect = fake_sub
 
     result = process_video(VTT_URL, work_dir=str(work))
-    assert result == ("test_video", None)
+    assert result[0] == "test_video" and result[1] is None
     assert (isolated_cwd / "test_video.txt").exists()
 
 
@@ -599,7 +599,7 @@ def test_process_video_stdout_mode(mock_pipeline, tmp_path):
         captured = sys.stdout.getvalue()
         sys.stdout = old
 
-    assert result == ("test_video", None)
+    assert result[0] == "test_video" and result[1] is None
     assert "Hello world" in captured
     assert not (tmp_path / "test_video.txt").exists()
 

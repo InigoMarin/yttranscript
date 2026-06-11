@@ -174,8 +174,8 @@ def process_video(
     log_callback: Optional[Callable[[str, str], None]] = None,
     work_dir: Optional[str] = None,
     output_dir: Optional[str] = None,
-) -> Optional[tuple[str, Optional[str]]]:
-    """Main processing pipeline. Returns (video_title, summary_markdown) or None.
+) -> Optional[tuple[str, Optional[str], dict]]:
+    """Main processing pipeline. Returns (video_title, summary_markdown, video_info) or None.
 
     `work_dir`: directory for intermediate files (subtitle/audio/VTT). Defaults
         to a private TemporaryDirectory, so the user's CWD is no longer polluted
@@ -280,7 +280,7 @@ def process_video(
                             summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                             output_dir=final_output_dir,
                         )
-                        return (video_title, summary_md)
+                        return (video_title, summary_md, video_info)
 
                 warn("No subtitles available.")
             else:
@@ -310,9 +310,9 @@ def process_video(
                     summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                     output_dir=final_output_dir,
                 )
-                return (video_title, summary_md)
+                return (video_title, summary_md, video_info)
 
-        return (video_title, None)
+        return (video_title, None, video_info)
     finally:
         if work_ctx is not None:
             work_ctx.cleanup()
