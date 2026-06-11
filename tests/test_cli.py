@@ -639,3 +639,33 @@ def test_merge_naming_without_output(monkeypatch, tmp_path):
     main()
     merge_path = mock_merge.call_args.args[1]
     assert merge_path.name == "MyChannel.docx"
+
+
+# --- --group flag -----------------------------------------------------------
+
+def test_parser_group_flag():
+    parser = build_parser()
+    args = parser.parse_args(["--group", "tech", "--transcribe"])
+    assert args.group == "tech"
+
+
+def test_group_requires_transcribe(monkeypatch):
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("sys.argv", ["yttranscript", "--group", "tech"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+
+
+def test_group_no_url_required(monkeypatch):
+    mock_list = MagicMock(return_value=("Channel", []))
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {
+        "channels": {"tech": ["https://www.youtube.com/@Fireship"]},
+    })
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "--group", "tech", "--transcribe",
+    ])
+    main()
+    mock_list.assert_called_once()

@@ -8,6 +8,7 @@ Export to **txt**, **VTT**, **SRT**, **JSON** (chunked for RAG), **PDF**, **EPUB
 ## Features
 
 - Auto-detect video language; tries manual → auto-generated subtitles → Whisper
+- Channel groups: define named channel collections in config, transcribe all at once (`--group`)
 - Batch mode: transcribe the latest N videos from a channel (`--latest`)
 - AI summarization via external command (llama-cli, Ollama, etc.)
 - `--merge` combines all summaries from a batch into a single PDF/EPUB/DOCX
@@ -99,6 +100,21 @@ yttranscript "https://youtube.com/@channel" --latest 5 --transcribe --summarize 
 yttranscript --serve
 yttranscript --serve --port 9090
 
+# Transcribe all channels in a group (defined in config.toml)
+yttranscript --group tech --transcribe
+
+# Transcribe latest 3 videos per channel in a group
+yttranscript --group tech --latest 3 --transcribe
+
+# Transcribe + summarize a group, merged into single PDF
+yttranscript --group tech --transcribe --summarize --format pdf --merge
+
+# Transcribe + summarize a group, merged into EPUB
+yttranscript --group tech --transcribe --summarize --format epub --merge
+
+# Combine group with language and output options
+yttranscript --group tech --transcribe --lang es --output-dir ~/transcripts/
+
 # Custom output filename or directory
 yttranscript URL -o my_transcript
 yttranscript URL --output-dir ~/transcripts/
@@ -156,6 +172,7 @@ yttranscript URL --keep-vtt --keep-audio
 | `--latest [N]` | List latest N videos from a channel (default: 10) |
 | `--transcribe` | With `--latest`, transcribe all listed videos (batch mode). All other options apply to each video. |
 | `--merge` | With `--latest --transcribe --format pdf/epub/docx --summarize`, generate a single merged document with all summaries. |
+| `--group` | Transcribe all channels in a named group from config (requires `--transcribe`). No URL needed. |
 | `--work-dir` | Directory for intermediate files (subtitle/audio/VTT). Default: private tempdir. |
 | `--output-dir` | Directory where the final transcript is saved. Default: current directory. |
 | `-V, --version` | Show version |
@@ -201,6 +218,55 @@ Check your current config:
 ```bash
 yttranscript --show-config
 ```
+
+### Channel Groups
+
+Define named collections of YouTube channels in the `[channels]` section of
+`config.toml`. Each group is a name mapping to a list of channel URLs:
+
+```toml
+[channels]
+tech = [
+    "https://www.youtube.com/@Fireship",
+    "https://www.youtube.com/@ThePrimeagen",
+    "https://www.youtube.com/@TheCodingTrain",
+]
+news = [
+    "https://www.youtube.com/@BBCNews",
+    "https://www.youtube.com/@CNN",
+]
+learning = [
+    "https://www.youtube.com/@3Blue1Brown",
+    "https://www.youtube.com/@MITOpenCourseWare",
+]
+```
+
+Then transcribe all channels in a group with `--group`:
+
+```bash
+yttranscript --group tech --transcribe
+```
+
+Each URL in the group is resolved to its channel, the latest N videos are
+fetched (default 10, override with `--latest`), and transcribed sequentially.
+All standard options (`--format`, `--lang`, `--summarize`, etc.) apply to
+every video in the group.
+
+When using `--merge` with a group, the merged output file is named after the
+group (e.g., `tech.pdf`) unless `--output` is specified.
+
+`--group` requires `--transcribe`. No positional URL is needed when using
+`--group`.
+
+Non-YouTube URLs in a group are automatically skipped with a warning.
+
+List your groups and verify config:
+
+```bash
+yttranscript --show-config
+```
+
+This displays all config values plus any channel groups you have defined.
 
 ## Summarization with AI
 
@@ -348,4 +414,19 @@ yttranscript URL --stdout | grep -i "webhook"
 
 # Copy transcript to clipboard without saving
 yttranscript URL --stdout | wl-copy
+
+# Transcribe all channels in the "tech" group
+yttranscript --group tech --transcribe
+
+# Latest 5 videos per channel in the "news" group
+yttranscript --group news --latest 5 --transcribe
+
+# Transcribe + summarize "learning" group, merged into a single EPUB
+yttranscript --group learning --transcribe --summarize --format epub --merge
+
+# Transcribe group with custom output directory and language
+yttranscript --group tech --transcribe --lang en --output-dir ~/transcripts/tech/
+
+# Transcribe group with Whisper fallback
+yttranscript --group tech --transcribe --whisper
 ```

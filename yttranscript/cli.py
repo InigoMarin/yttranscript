@@ -12,6 +12,7 @@ from ._version import __version__
 from .log import info, warn, error, Colors
 from .config import (
     CONFIG_PATH, DEFAULTS, load_config, resolve_value, ensure_config_dir, hidden_keys,
+    resolve_channel_group,
 )
 from .util import is_youtube_url, is_valid_lang_code, sanitize_filename, TranscriptError
 from .ytdlp import list_channel_videos
@@ -32,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  yttranscript URL --list-subs\n"
             "  yttranscript URL --latest 5\n"
             "  yttranscript URL --latest 5 --transcribe\n"
+            "  yttranscript --group tech --transcribe\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -186,6 +188,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory where the final transcript is saved. Default: current directory.",
     )
+    parser.add_argument(
+        "--group",
+        default=None,
+        metavar="NAME",
+        help="Transcribe all channels in a named group from config (requires --transcribe).",
+    )
     return parser
 
 
@@ -202,6 +210,14 @@ def show_config() -> None:
         source = "config" if raw is not None else "default"
         display = resolved if resolved is not None else "auto-detect"
         print(f"  {key + ':':20} {str(display):12} ({source})")
+
+    channels = config.get("channels", {})
+    if channels:
+        print(f"\n  {Colors.BOLD}Channel groups:{Colors.RESET}\n")
+        for group_name, group_urls in channels.items():
+            print(f"  {group_name}:")
+            for url in group_urls:
+                print(f"    - {url}")
 
     print()
     sys.exit(0)
@@ -223,6 +239,8 @@ def _validate_args(parser: argparse.ArgumentParser, args) -> None:
         )
     if args.merge and not args.transcribe:
         parser.error("--merge requires --transcribe")
+    if args.group is not None and not args.transcribe:
+        parser.error("--group requires --transcribe")
 
 
 def transcribe_batch(videos, args, channel_name: str = "") -> None:
@@ -336,10 +354,10 @@ def main() -> None:
         run_server(args.port)
         return
 
-    if not args.url:
-        parser.error("a YouTube URL is required (or use --serve for web UI)")
+    if not args.url and not args.group:
+        parser.error("a YouTube URL is required (or use --serve or --group)")
 
-    if not is_youtube_url(args.url):
+    if args.url and not is_youtube_url(args.url):
         parser.error(f"not a YouTube URL: {args.url!r}")
 
     if args.latest is not None:
@@ -349,6 +367,21 @@ def main() -> None:
         if args.list_subs:
             parser.error("--list-subs cannot be used with --latest --transcribe")
         transcribe_batch(videos, args, channel_name=channel_name)
+        return
+
+    if args.group is not None:
+        config = load_config()
+        urls = resolve_channel_group(config, args.group)
+        for url in urls:
+            if not is_youtube_url(url):
+                warn(f"Skipping non-YouTube URL in group {args.group!r}: {url}")
+                continue
+            channel_name, videos = list_channel_videos(url, args.latest or 10)
+            if not videos:
+                warn(f"No videos found for {url}")
+                continue
+            info(f"Group {args.group!r}: transcribing {len(videos)} videos from {channel_name}")
+            transcribe_batch(videos, args, channel_name=channel_name)
         return
 
     config = load_config()

@@ -14,6 +14,7 @@ except ImportError:
         tomllib = None
 
 from .log import warn
+from .util import TranscriptError
 
 
 def _config_dir() -> Path:
@@ -77,6 +78,17 @@ def generate_config_template() -> str:
             continue
         example = _CONFIG_EXAMPLES.get(key, default)
         lines.append(f"# {key} = {_toml_value(example)}")
+    lines.extend([
+        "",
+        "#",
+        "# [channels]",
+        "# tech = [",
+        '#     "https://www.youtube.com/@Fireship",',
+        "# ]",
+        "# news = [",
+        '#     "https://www.youtube.com/@BBCNews",',
+        "# ]",
+    ])
     return "\n".join(lines) + "\n"
 
 
@@ -115,3 +127,23 @@ def resolve_value(arg_value, config: dict, key: str):
 def hidden_keys() -> set[str]:
     """Return the set of keys hidden from --show-config / templates."""
     return _CONFIG_HIDDEN
+
+
+def load_channels() -> dict[str, list[str]]:
+    """Load channel groups from config. Returns {} if none defined."""
+    config = load_config()
+    return config.get("channels", {})
+
+
+def resolve_channel_group(config: dict, group_name: str) -> list[str]:
+    """Return the list of URLs for a named channel group.
+
+    Raises TranscriptError if the group doesn't exist.
+    """
+    channels = config.get("channels", {})
+    if group_name not in channels:
+        available = ", ".join(sorted(channels)) if channels else "(none)"
+        raise TranscriptError(
+            f"Channel group {group_name!r} not found. Available groups: {available}"
+        )
+    return channels[group_name]

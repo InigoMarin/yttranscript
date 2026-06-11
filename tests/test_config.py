@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from yttranscript import config
 from yttranscript.config import (
     DEFAULTS,
@@ -12,7 +14,10 @@ from yttranscript.config import (
     _toml_value,
     generate_config_template,
     resolve_value,
+    load_channels,
+    resolve_channel_group,
 )
+from yttranscript.util import TranscriptError
 
 
 # --- XDG_CONFIG_HOME ------------------------------------------------------
@@ -130,3 +135,54 @@ def test_ensure_config_dir_creates_default_file(monkeypatch, tmp_path):
     config.ensure_config_dir()
     assert target.exists()
     assert "yttranscript configuration" in target.read_text()
+
+
+# --- load_channels ---------------------------------------------------------
+
+def test_load_channels_returns_empty_when_none(monkeypatch, tmp_path):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('lang = "es"\n')
+    monkeypatch.setattr(config, "CONFIG_PATH", cfg_file)
+    monkeypatch.setattr(config, "ensure_config_dir", lambda: None)
+    assert load_channels() == {}
+
+
+def test_load_channels_returns_groups(monkeypatch, tmp_path):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        '[channels]\n'
+        'tech = ["https://www.youtube.com/@Fireship"]\n'
+        'news = ["https://www.youtube.com/@BBCNews"]\n'
+    )
+    monkeypatch.setattr(config, "CONFIG_PATH", cfg_file)
+    monkeypatch.setattr(config, "ensure_config_dir", lambda: None)
+    result = load_channels()
+    assert result == {
+        "tech": ["https://www.youtube.com/@Fireship"],
+        "news": ["https://www.youtube.com/@BBCNews"],
+    }
+
+
+# --- resolve_channel_group --------------------------------------------------
+
+def test_resolve_channel_group_found():
+    cfg = {"channels": {"tech": ["https://www.youtube.com/@Fireship"]}}
+    assert resolve_channel_group(cfg, "tech") == ["https://www.youtube.com/@Fireship"]
+
+
+def test_resolve_channel_group_not_found_raises():
+    cfg = {"channels": {"tech": ["https://www.youtube.com/@Fireship"]}}
+    with pytest.raises(TranscriptError, match="tech2.*Available groups: tech"):
+        resolve_channel_group(cfg, "tech2")
+
+
+def test_resolve_channel_group_empty_config_raises():
+    with pytest.raises(TranscriptError, match="Available groups:.*none"):
+        resolve_channel_group({}, "missing")
+
+
+# --- template includes channels section ------------------------------------
+
+def test_template_includes_channels_section():
+    tmpl = generate_config_template()
+    assert "[channels]" in tmpl
