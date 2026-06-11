@@ -669,3 +669,73 @@ def test_group_no_url_required(monkeypatch):
     ])
     main()
     mock_list.assert_called_once()
+
+
+def test_main_group_merge_creates_single_file(monkeypatch):
+    mock_list = MagicMock(side_effect=[
+        ("Channel1", [("2024-01-15", "vid1", "Video 1"), ("2024-01-14", "vid2", "Video 2")]),
+        ("Channel2", [("2024-01-13", "vid3", "Video 3")]),
+    ])
+    mock_pv = MagicMock(return_value=("title", "summary text"))
+    mock_merge = MagicMock()
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {
+        "channels": {"tech": ["https://youtube.com/@ch1", "https://youtube.com/@ch2"]},
+    })
+    monkeypatch.setattr("yttranscript.cli.markdown_to_merged", mock_merge)
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "--group", "tech", "--transcribe",
+        "--summarize", "--merge", "-f", "epub",
+    ])
+    main()
+    mock_merge.assert_called_once()
+    sections = mock_merge.call_args.args[0]
+    assert len(sections) == 3
+    merge_path = mock_merge.call_args.args[1]
+    assert merge_path.name == "tech.epub"
+    assert mock_merge.call_args.kwargs["channel_name"] == "tech"
+
+
+def test_main_group_merge_with_output_flag(monkeypatch):
+    mock_list = MagicMock(side_effect=[
+        ("Channel1", [("2024-01-15", "vid1", "Video 1")]),
+    ])
+    mock_pv = MagicMock(return_value=("title", "summary text"))
+    mock_merge = MagicMock()
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {
+        "channels": {"tech": ["https://youtube.com/@ch1"]},
+    })
+    monkeypatch.setattr("yttranscript.cli.markdown_to_merged", mock_merge)
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "--group", "tech", "--transcribe",
+        "--summarize", "--merge", "-f", "epub", "-o", "mynews",
+    ])
+    main()
+    merge_path = mock_merge.call_args.args[1]
+    assert merge_path.name == "mynews_merged.epub"
+
+
+def test_main_group_no_merge_without_flag(monkeypatch):
+    mock_list = MagicMock(side_effect=[
+        ("Channel1", [("2024-01-15", "vid1", "Video 1")]),
+    ])
+    mock_pv = MagicMock(return_value=("title", "summary text"))
+    mock_merge = MagicMock()
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {
+        "channels": {"tech": ["https://youtube.com/@ch1"]},
+    })
+    monkeypatch.setattr("yttranscript.cli.markdown_to_merged", mock_merge)
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "--group", "tech", "--transcribe",
+        "--summarize", "-f", "epub",
+    ])
+    main()
+    mock_merge.assert_not_called()

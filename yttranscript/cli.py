@@ -243,7 +243,7 @@ def _validate_args(parser: argparse.ArgumentParser, args) -> None:
         parser.error("--group requires --transcribe")
 
 
-def transcribe_batch(videos, args, channel_name: str = "") -> None:
+def transcribe_batch(videos, args, channel_name: str = "", sections_list: list | None = None) -> None:
     """Transcribe a batch of videos listed by --latest --transcribe."""
     config = load_config()
     lang = resolve_value(args.lang, config, "lang")
@@ -269,7 +269,10 @@ def transcribe_batch(videos, args, channel_name: str = "") -> None:
     total = len(videos)
     succeeded = 0
     failed = 0
-    collected_sections: list[tuple[dict, str]] = []
+    if sections_list is not None:
+        collected_sections = sections_list
+    else:
+        collected_sections: list[tuple[dict, str]] = []
 
     for i, (_date_str, video_id, title) in enumerate(videos, 1):
         video_url = f"https://www.youtube.com/watch?v={video_id}"
@@ -316,7 +319,7 @@ def transcribe_batch(videos, args, channel_name: str = "") -> None:
             error(f"Failed: {msg}")
             failed += 1
 
-    if args.merge and collected_sections:
+    if args.merge and collected_sections and sections_list is None:
         output_dir = Path(args.output_dir) if args.output_dir else Path.cwd()
         merge_ext = f".{fmt}"
         if args.output:
@@ -364,6 +367,7 @@ def main() -> None:
     if args.group is not None:
         config = load_config()
         urls = resolve_channel_group(config, args.group)
+        all_sections: list[tuple[dict, str]] = []
         for url in urls:
             if not is_youtube_url(url):
                 warn(f"Skipping non-YouTube URL in group {args.group!r}: {url}")
@@ -373,7 +377,23 @@ def main() -> None:
                 warn(f"No videos found for {url}")
                 continue
             info(f"Group {args.group!r}: transcribing {len(videos)} videos from {channel_name}")
-            transcribe_batch(videos, args, channel_name=channel_name)
+            batch_sections: list[tuple[dict, str]] = []
+            transcribe_batch(videos, args, channel_name=channel_name, sections_list=batch_sections)
+            all_sections.extend(batch_sections)
+        if args.merge and all_sections:
+            fmt = resolve_value(args.format, config, "format")
+            output_dir = Path(args.output_dir) if args.output_dir else Path.cwd()
+            merge_ext = f".{fmt}"
+            if args.output:
+                merge_name = f"{args.output}_merged{merge_ext}"
+            else:
+                merge_name = f"{sanitize_filename(args.group)}{merge_ext}"
+            merge_path = output_dir / merge_name
+            try:
+                markdown_to_merged(all_sections, merge_path, fmt=fmt, channel_name=args.group)
+                info(f"Merged {fmt.upper()}: {merge_path}")
+            except Exception as e:
+                error(f"Failed to generate merged {fmt.upper()}: {e}")
         return
 
     if args.latest is not None:
