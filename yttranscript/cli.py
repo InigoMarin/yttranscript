@@ -360,15 +360,6 @@ def main() -> None:
     if args.url and not is_youtube_url(args.url):
         parser.error(f"not a YouTube URL: {args.url!r}")
 
-    if args.latest is not None:
-        channel_name, videos = list_channel_videos(args.url, args.latest)
-        if not args.transcribe:
-            return
-        if args.list_subs:
-            parser.error("--list-subs cannot be used with --latest --transcribe")
-        transcribe_batch(videos, args, channel_name=channel_name)
-        return
-
     if args.group is not None:
         config = load_config()
         urls = resolve_channel_group(config, args.group)
@@ -382,6 +373,15 @@ def main() -> None:
                 continue
             info(f"Group {args.group!r}: transcribing {len(videos)} videos from {channel_name}")
             transcribe_batch(videos, args, channel_name=channel_name)
+        return
+
+    if args.latest is not None:
+        channel_name, videos = list_channel_videos(args.url, args.latest)
+        if not args.transcribe:
+            return
+        if args.list_subs:
+            parser.error("--list-subs cannot be used with --latest --transcribe")
+        transcribe_batch(videos, args, channel_name=channel_name)
         return
 
     config = load_config()
