@@ -5,10 +5,7 @@
 #set page(
   paper: "a4",
   margin: (top: 2.5cm, bottom: 2.2cm, left: 2.2cm, right: 2.2cm),
-  numbering: (n, pages) => {
-    set text(size: 8.5pt, fill: luma(140))
-    align(center)[#n]
-  },
+  numbering: "1",
 )
 
 #set text(

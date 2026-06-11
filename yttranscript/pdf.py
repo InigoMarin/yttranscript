@@ -87,7 +87,6 @@ def _run_pandoc(
     output_path: Path,
     fmt: str = "pdf",
     metadata: Optional[dict] = None,
-    toc: bool = False,
 ) -> None:
     """Run Pandoc to convert *md_content* into the requested *fmt*.
 
@@ -97,8 +96,6 @@ def _run_pandoc(
 
     *metadata* is an optional dict of ``{key: value}`` pairs passed as
     ``--metadata key=value`` flags to Pandoc.
-
-    *toc* when True adds ``--toc`` to generate a clickable table of contents.
     """
     template = _TEMPLATE_PATH if _TEMPLATE_PATH.exists() else None
 
@@ -120,9 +117,6 @@ def _run_pandoc(
         if metadata:
             for key, value in metadata.items():
                 cmd.append(f"--metadata={key}={value}")
-        if toc:
-            cmd.append("--toc")
-            cmd.append("--toc-depth=1")
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=60,
         )
@@ -262,10 +256,13 @@ def markdown_to_merged(
 
     md_final = "\n".join(md_parts)
 
-    _run_pandoc(
-        md_final, output_path, fmt=fmt, metadata=meta,
-        toc=len(sections) > 1,
-    )
+    if len(sections) > 1:
+        toc_typst = "\n\n```{=typst}\n#outline(title: none, indent: 1.5em, depth: 1)\n#pagebreak()\n```\n\n"
+        parts = md_final.split(sep, 1)
+        if len(parts) == 2:
+            md_final = parts[0] + toc_typst + sep + parts[1]
+
+    _run_pandoc(md_final, output_path, fmt=fmt, metadata=meta)
 
 
 def markdown_to_merged_pdf(
