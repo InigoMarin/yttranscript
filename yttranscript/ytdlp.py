@@ -208,24 +208,27 @@ def resolve_channel_videos(url: str, limit: int = 10) -> tuple[str, list[tuple[s
     success(f"Channel: {channel_name} ({channel_id})")
 
     info(f"Fetching latest {limit} videos...")
+    fetch_limit = limit * 3
     result = run(
-        ["yt-dlp", "--playlist-items", f"1-{limit}",
+        ["yt-dlp", "--playlist-items", f"1-{fetch_limit}",
          "--print", "%(upload_date)s|%(id)s|%(title)s",
+         "--no-abort-on-error",
          playlist_url],
-        capture=True, check=False, timeout=TIMEOUT_CHANNEL,
+        capture=True, check=False, quiet=True, timeout=TIMEOUT_CHANNEL,
     )
-    if result.returncode != 0 or not result.stdout.strip():
-        raise TranscriptError("Could not fetch channel videos.")
-
     videos: list[tuple[str, str, str]] = []
     for line in result.stdout.strip().splitlines():
+        if line.startswith("ERROR"):
+            continue
         parts = line.split("|", 2)
         if len(parts) < 3:
             continue
         date_raw, vid, title = parts
         date_str = f"{date_raw[:4]}-{date_raw[4:6]}-{date_raw[6:8]}" if len(date_raw) == 8 and date_raw != "NA" else "Unknown"
         videos.append((date_str, vid, title))
-    return channel_name, videos
+    if not videos:
+        raise TranscriptError("Could not fetch channel videos.")
+    return channel_name, videos[:limit]
 
 
 def list_channel_videos(url: str, limit: int = 10) -> tuple[str, list[tuple[str, str, str]]]:

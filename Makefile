@@ -1,6 +1,6 @@
 .PHONY: all pkg install clean rebuild test test-cov lint help
 
-VERSION := 2.9.1
+VERSION := 2.9.2
 PKGNAME := yttranscript
 TARBALL := $(PKGNAME)-$(VERSION).tar.gz
 SRC_DIR := $(PKGNAME)-$(VERSION)
