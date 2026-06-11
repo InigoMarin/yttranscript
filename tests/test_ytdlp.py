@@ -70,10 +70,14 @@ def test_get_video_title_uses_metadata_timeout():
 # --- get_video_info -------------------------------------------------------
 
 def test_get_video_info_success():
-    raw = "120|5000000|My Title"
+    raw = "120|5000000|My Title|TestChannel|20240115"
     with patch("yttranscript.ytdlp.run", return_value=_cp(0, raw)):
         info = get_video_info("u")
-        assert info == {"duration": 120, "size": 5000000, "title": "My Title"}
+        assert info["duration"] == 120
+        assert info["size"] == 5000000
+        assert info["title"] == "My Title"
+        assert info["channel"] == "TestChannel"
+        assert info["upload_date"] == "2024-01-15"
 
 
 def test_get_video_info_handles_na_values():
@@ -83,20 +87,28 @@ def test_get_video_info_handles_na_values():
         assert info["duration"] == 0
         assert info["size"] == 0
         assert info["title"] == "Title"
+        assert info["channel"] == ""
+        assert info["upload_date"] == ""
 
 
 def test_get_video_info_failure():
     with patch("yttranscript.ytdlp.run", return_value=_cp(1, "")):
         info = get_video_info("u")
-        assert info == {"duration": 0, "size": 0, "title": "unknown"}
+        assert info["duration"] == 0
+        assert info["size"] == 0
+        assert info["title"] == "unknown"
+        assert info["channel"] == ""
+        assert info["upload_date"] == ""
 
 
 def test_get_video_info_title_with_pipe_preserved():
-    """Titles containing | are kept intact (split limit prevents corruption)."""
-    raw = "60|1000|Cool Video | Part 1 | HD"
+    """Titles containing | before the last 2 fields are kept intact."""
+    raw = "60|1000|Cool Video - Part 1|TestChannel|20240115"
     with patch("yttranscript.ytdlp.run", return_value=_cp(0, raw)):
         info = get_video_info("u")
-        assert info["title"] == "Cool Video | Part 1 | HD"
+        assert info["title"] == "Cool Video - Part 1"
+        assert info["channel"] == "TestChannel"
+        assert info["upload_date"] == "2024-01-15"
 
 
 def test_get_video_info_handles_float_duration():

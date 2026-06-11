@@ -44,6 +44,12 @@ def _build_frontmatter(video_info: dict) -> str:
     url = video_info.get("url", "")
     if url:
         lines.append(f"url: {_yaml_quote(url)}")
+    channel = video_info.get("channel", "")
+    if channel:
+        lines.append(f"channel: {_yaml_quote(channel)}")
+    upload_date = video_info.get("upload_date", "")
+    if upload_date:
+        lines.append(f"upload_date: {_yaml_quote(upload_date)}")
     lines.append(f"duration: {duration_str}")
     lines.append(f"source: {source}")
     lines.append("---")
@@ -163,7 +169,7 @@ def markdown_to_epub(
         md_content = frontmatter + "\n\n" + md_content
         meta = {
             "title": video_info.get("title", "unknown"),
-            "author": "yttranscript",
+            "author": video_info.get("channel", "yttranscript"),
         }
 
     _run_pandoc(md_content, output_path, fmt="epub", metadata=meta)
@@ -190,7 +196,7 @@ def markdown_to_docx(
         md_content = frontmatter + "\n\n" + md_content
         meta = {
             "title": video_info.get("title", "unknown"),
-            "author": "yttranscript",
+            "author": video_info.get("channel", "yttranscript"),
         }
 
     _run_pandoc(md_content, output_path, fmt="docx", metadata=meta)
@@ -229,10 +235,16 @@ def markdown_to_merged(
         source = "Whisper" if video_info.get("whisper") else "YouTube subtitles"
         url = video_info.get("url", "")
         vtitle = video_info.get("title", "unknown")
+        channel = video_info.get("channel", "")
+        upload_date = video_info.get("upload_date", "")
 
         section = sep
         section += f"# {vtitle}\n\n"
         section += f"**URL:** {url}  \n"
+        if channel:
+            section += f"**Channel:** {channel}  \n"
+        if upload_date:
+            section += f"**Upload Date:** {upload_date}  \n"
         section += f"**Duration:** {duration}  \n"
         section += f"**Source:** {source}\n\n"
         section += _sanitize_markdown(summary_md)
@@ -240,7 +252,7 @@ def markdown_to_merged(
 
     meta = None
     if fmt in ("epub", "docx"):
-        meta = {"title": title, "author": "yttranscript"}
+        meta = {"title": title, "author": channel_name or "yttranscript"}
 
     _run_pandoc("\n".join(md_parts), output_path, fmt=fmt, metadata=meta)
 

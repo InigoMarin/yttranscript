@@ -81,6 +81,8 @@ $if(url)$
     row-gutter: 0.35em,
     text(weight: "bold", fill: rgb("#64748b"))[URL:], link("$url$"),
     $if(duration)$text(weight: "bold", fill: rgb("#64748b"))[Duration:], [$duration$],$endif$
+    $if(channel)$text(weight: "bold", fill: rgb("#64748b"))[Channel:], [$channel$],$endif$
+    $if(upload_date)$text(weight: "bold", fill: rgb("#64748b"))[Upload Date:], [$upload_date$],$endif$
     $if(source)$text(weight: "bold", fill: rgb("#64748b"))[Source:], [$source$],$endif$
   )
 ]

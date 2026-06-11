@@ -301,7 +301,8 @@ def transcribe_batch(videos, args, channel_name: str = "") -> None:
             succeeded += 1
             if args.merge and result and result[1]:
                 collected_sections.append((
-                    {"title": title, "url": video_url, "duration": 0},
+                    {"title": title, "url": video_url, "duration": 0,
+                     "channel": channel_name, "upload_date": _date_str},
                     result[1],
                 ))
         except KeyboardInterrupt:

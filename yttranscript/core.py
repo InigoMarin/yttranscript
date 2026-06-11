@@ -236,6 +236,8 @@ def process_video(
                 "duration": metadata["duration"],
                 "size": metadata["size"],
                 "title": metadata["title"],
+                "channel": metadata.get("channel", ""),
+                "upload_date": metadata.get("upload_date", ""),
             }
             video_duration = video_info["duration"]
 
@@ -273,7 +275,7 @@ def process_video(
                         vtt_files[0].rename(final_vtt)
                         _, summary_md = _render_output(
                             final_vtt,
-                            {"title": video_title, "url": url, "duration": video_duration, "whisper": False},
+                            {"title": video_title, "url": url, "duration": video_duration, "whisper": False, "channel": metadata.get("channel", ""), "upload_date": metadata.get("upload_date", "")},
                             fmt, stdout_mode, timestamps, chunk_size,
                             summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                             output_dir=final_output_dir,
@@ -303,7 +305,7 @@ def process_video(
             if vtt_file.exists():
                 _, summary_md = _render_output(
                     vtt_file,
-                    {"title": video_title, "url": url, "duration": video_duration, "whisper": True},
+                    {"title": video_title, "url": url, "duration": video_duration, "whisper": True, "channel": metadata.get("channel", ""), "upload_date": metadata.get("upload_date", "")},
                     fmt, stdout_mode, timestamps, chunk_size,
                     summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                     output_dir=final_output_dir,

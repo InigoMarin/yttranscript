@@ -111,6 +111,8 @@ def get_video_metadata(url: str) -> dict:
         "duration": 0,
         "size": 0,
         "language": None,
+        "channel": "",
+        "upload_date": "",
     }
     if result.returncode != 0:
         return fallback
@@ -143,12 +145,21 @@ def get_video_metadata(url: str) -> dict:
     elif "-" in language:
         language = language.split("-")[0]
 
+    channel = data.get("channel") or data.get("uploader") or ""
+
+    upload_date_raw = data.get("upload_date") or ""
+    upload_date = ""
+    if len(upload_date_raw) == 8:
+        upload_date = f"{upload_date_raw[:4]}-{upload_date_raw[4:6]}-{upload_date_raw[6:8]}"
+
     return {
         "title": title,
         "sanitized_title": sanitize_filename(title),
         "duration": duration,
         "size": size,
         "language": language,
+        "channel": channel,
+        "upload_date": upload_date,
     }
 
 
@@ -228,15 +239,15 @@ def list_channel_videos(url: str, limit: int = 10) -> tuple[str, list[tuple[str,
 
 def get_video_info(url: str) -> dict:
     """Get basic video info."""
-    fmt = "%(duration)s|%(filesize_approx)s|%(title)s"
+    fmt = "%(duration)s|%(filesize_approx)s|%(title)s|%(channel)s|%(upload_date)s"
     result = run(
         ["yt-dlp", "--print", fmt, "-f", "bestaudio", url],
         capture=True, check=False, timeout=TIMEOUT_METADATA,
     )
     if result.returncode != 0:
         warn("Could not fetch video info (duration/size will be unknown).")
-        return {"duration": 0, "size": 0, "title": "unknown"}
-    parts = result.stdout.strip().split("|", 2)
+        return {"duration": 0, "size": 0, "title": "unknown", "channel": "", "upload_date": ""}
+    parts = result.stdout.strip().split("|", 4)
     try:
         duration = int(float(parts[0])) if len(parts) > 0 and parts[0] != "NA" else 0
     except ValueError:
@@ -246,7 +257,12 @@ def get_video_info(url: str) -> dict:
     except ValueError:
         size = 0
     title = parts[2] if len(parts) > 2 else "unknown"
-    return {"duration": duration, "size": size, "title": title}
+    channel = parts[3] if len(parts) > 3 and parts[3] != "NA" else ""
+    upload_date_raw = parts[4] if len(parts) > 4 and parts[4] != "NA" else ""
+    upload_date = ""
+    if len(upload_date_raw) == 8:
+        upload_date = f"{upload_date_raw[:4]}-{upload_date_raw[4:6]}-{upload_date_raw[6:8]}"
+    return {"duration": duration, "size": size, "title": title, "channel": channel, "upload_date": upload_date}
 
 
 def try_download_subtitle(

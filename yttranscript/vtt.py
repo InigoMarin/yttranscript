@@ -108,6 +108,8 @@ def vtt_to_json(vtt_path: Path, video_info: dict, chunk_size: int = 30) -> str:
         "title": video_info.get("title", "unknown"),
         "url": video_info.get("url", ""),
         "duration": video_info.get("duration", 0),
+        "channel": video_info.get("channel", ""),
+        "upload_date": video_info.get("upload_date", ""),
         "source": "whisper" if video_info.get("whisper") else "subtitles",
         "chunk_size": chunk_size,
         "chunks": chunks,
@@ -120,16 +122,21 @@ def format_video_header(video_info: dict) -> str:
     from .util import format_duration
 
     duration_str = format_duration(video_info.get("duration", 0))
-    return (
-        f"# {video_info.get('title', 'unknown')}\n"
-        f"\n"
-        f"**URL:** {video_info.get('url', 'unknown')}  \n"
-        f"**Duration:** {duration_str}  \n"
-        f"**Transcribed:** {'Whisper' if video_info.get('whisper') else 'YouTube subtitles'}\n"
-        f"\n"
-        f"---\n"
-        f"\n"
-    )
+    channel = video_info.get("channel", "")
+    upload_date = video_info.get("upload_date", "")
+    lines = [
+        f"# {video_info.get('title', 'unknown')}",
+        "",
+        f"**URL:** {video_info.get('url', 'unknown')}  ",
+        f"**Channel:** {channel}  " if channel else "",
+        f"**Upload Date:** {upload_date}  " if upload_date else "",
+        f"**Duration:** {duration_str}  ",
+        f"**Transcribed:** {'Whisper' if video_info.get('whisper') else 'YouTube subtitles'}",
+        "",
+        "---",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def _deduped_cues(vtt_path: Path) -> list[tuple[int, str]]:

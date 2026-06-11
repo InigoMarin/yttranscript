@@ -392,7 +392,7 @@ def test_merged_epub_passes_metadata_flags(monkeypatch, tmp_path):
     assert len(calls) == 1
     cmd = calls[0]
     assert "--metadata=title=TestChannel" in cmd
-    assert "--metadata=author=yttranscript" in cmd
+    assert "--metadata=author=TestChannel" in cmd
 
 
 def test_merged_docx_passes_metadata_flags(monkeypatch, tmp_path):
@@ -404,7 +404,7 @@ def test_merged_docx_passes_metadata_flags(monkeypatch, tmp_path):
     assert len(calls) == 1
     cmd = calls[0]
     assert "--metadata=title=TestChannel" in cmd
-    assert "--metadata=author=yttranscript" in cmd
+    assert "--metadata=author=TestChannel" in cmd
 
 
 def test_merged_pdf_no_metadata_flags(monkeypatch, tmp_path):
