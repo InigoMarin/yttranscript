@@ -33,7 +33,7 @@ Single Python package (`yttranscript/`) with entrypoint `yttranscript:main` (als
 - `ytdlp.py` — yt-dlp wrapper for subtitle extraction
 - `vtt.py` — VTT parsing and format conversion
 - `whisper.py` — Whisper transcription fallback
-- `summarize.py` — pipes transcript to external AI command
+- `summarize.py` — pipes transcript to external AI command (uses `script(1)` pseudo-terminal, BSD/Linux only)
 - `config.py` — XDG config loading (`~/.config/yttranscript/config.toml`)
 - `web.py` — local web UI (HTTP server with SSE streaming)
 - `pdf.py` — PDF/EPUB/DOCX export via Pandoc + Typst
@@ -47,10 +47,12 @@ Package data bundled: `web_ui.html`, `templates/*.typ`.
 - `conftest.py` adds repo root to `sys.path` — tests work without editable install
 - pytest config: `--strict-markers` and `error::UserWarning` (UserWarnings fail tests)
 - Fixtures: `sample_vtt_path`, `isolated_cwd`, `reset_log`
+- PDF/pandoc tests auto-skip if `pandoc` (or `typst`) is not installed — a full green run may have skipped tests
 
 ## Gotchas
 
 - `src/` and `pkg/` are makepkg build artifacts (in `.gitignore`), not source directories
 - Linter is **pyflakes** only — no style enforcer (no black/ruff/pycodestyle)
 - PDF export requires external `pandoc` + `typst` installed on the system
-- Whisper is an optional dependency (`pip install ".[whisper]"`)
+- Whisper requires `ffmpeg` and is an optional dependency (`pip install ".[whisper]"`)
+- `yt-dlp` auto-installs itself at runtime if missing (pip → brew/apt fallback), so missing `yt-dlp` is not an error condition in the code
