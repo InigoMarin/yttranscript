@@ -147,6 +147,10 @@ yttranscript URL --keep-vtt --keep-audio
 # Re-download ignoring the cache
 yttranscript URL --no-cache
 
+# Skip if already cached (no file written, no AI run)
+yttranscript URL --skip-cached
+yttranscript --group news --latest 5 --transcribe --summarize --skip-cached
+
 # List recently transcribed videos from cache
 yttranscript --history
 yttranscript --history 50
@@ -197,6 +201,7 @@ yttranscript --cache-clear
 | `--output-dir` | Directory where the final transcript is saved. Default: current directory. |
 | `-V, --version` | Show version |
 | `--no-cache` | Skip cache lookup. Force re-download/transcription. |
+| `--skip-cached` | Skip processing if the video is already in cache. Prints "Already in cache" and exits. |
 | `--history [N]` | List N most recently transcribed videos from cache (default: 20) |
 | `--cache-stats` | Show cache statistics (videos, formats, channels, DB size) |
 | `--cache-info URL` | Show cached metadata for a video |
@@ -421,7 +426,14 @@ database at `~/.local/share/yttranscript/transcripts.db` (override with
 returns instantly from cache — no network calls, no subtitle downloads.
 
 The cache stores video metadata (title, channel, duration, upload date,
-language), the transcript text, and any AI-generated summaries.
+language) and the transcript text.
+
+When used with `--summarize`, the cached transcript is piped directly to
+the summarizer without re-downloading subtitles.
+
+Use `--skip-cached` to skip already-processed videos entirely — prints
+"Already in cache" and exits without writing any file or running the AI.
+Ideal in batch mode to only process new videos.
 
 ```bash
 # Normal run — downloads and caches
@@ -432,6 +444,12 @@ yttranscript URL
 
 # Force re-download (ignore cache)
 yttranscript URL --no-cache
+
+# Skip if already cached (no processing, no file written)
+yttranscript URL --skip-cached
+
+# Batch: only process videos not yet in cache
+yttranscript --group news --latest 5 --transcribe --summarize --skip-cached
 
 # View history
 yttranscript --history          # last 20
