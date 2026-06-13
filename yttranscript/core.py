@@ -63,6 +63,7 @@ def _render_output(
     summarize_timeout: int,
     keep_vtt: bool,
     output_dir: Path,
+    no_save: bool = False,
 ) -> Optional[tuple[Path, Optional[str]]]:
     """Render VTT to final output: summarize, stdout, or file in output_dir.
 
@@ -79,6 +80,9 @@ def _render_output(
         summary = summarize_text(text, summarize_cmd, summarize_prompt or "", summarize_timeout)
         if not summary:
             raise TranscriptError("Summarization failed.")
+        if no_save:
+            vtt_path.unlink(missing_ok=True)
+            return (None, summary)
         if stdout_mode:
             print(format_video_header(video_info), end="")
             print(summary)
@@ -239,6 +243,7 @@ def process_video(
     output_dir: Optional[str] = None,
     use_cache: bool = True,
     skip_cached: bool = False,
+    no_save: bool = False,
 ) -> Optional[tuple[str, Optional[str], dict]]:
     """Main processing pipeline. Returns (video_title, summary_markdown, video_info) or None.
 
@@ -398,7 +403,7 @@ def process_video(
                             video_info.to_dict(),
                             fmt, stdout_mode, timestamps, chunk_size,
                             summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
-                            output_dir=final_output_dir,
+                            output_dir=final_output_dir, no_save=no_save,
                         )
                         _maybe_cache(url, video_title, video_info.to_dict(), metadata, lang, "subtitles", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text)
                         return (video_title, summary_md, video_info.to_dict())
@@ -436,7 +441,7 @@ def process_video(
                     video_info.to_dict(),
                     fmt, stdout_mode, timestamps, chunk_size,
                     summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
-                    output_dir=final_output_dir,
+                    output_dir=final_output_dir, no_save=no_save,
                 )
                 _maybe_cache(url, video_title, video_info.to_dict(), metadata, lang, "whisper", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text)
                 return (video_title, summary_md, video_info.to_dict())

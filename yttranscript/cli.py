@@ -391,6 +391,7 @@ def transcribe_batch(videos, args, channel_name: str = "", sections_list: list |
                 output_dir=args.output_dir,
                 use_cache=use_cache,
                 skip_cached=skip_cached,
+                no_save=args.merge,
             )
             if result is None and skip_cached:
                 skipped += 1
