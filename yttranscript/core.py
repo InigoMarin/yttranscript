@@ -161,37 +161,46 @@ def _maybe_cache(
     source: str,
     fmt: str,
     stdout_mode: bool,
-    summarize: bool,
     use_cache: bool,
     output_dir: Path,
+    content: str | None = None,
+    summary: str | None = None,
+    summarize_cmd: str | None = None,
 ) -> None:
-    """Save transcript to cache DB if applicable.
+    """Save transcript (and optionally summary) to cache DB.
 
-    Only caches ``txt`` format, non-stdout, non-summarize results.
-    Reads the generated output file to store its content.
+    ``content`` is the transcript text.  If not provided directly, the
+    function tries to read it from ``output_dir/{video_title}.txt``.
     """
-    if not use_cache or stdout_mode or summarize or fmt != "txt":
+    if not use_cache or stdout_mode:
         return
     vid = cache_db.extract_video_id(url)
     if not vid:
         return
-    out_file = output_dir / f"{video_title}.txt"
-    if not out_file.exists():
-        return
-    content = out_file.read_text(encoding="utf-8")
-    cache_db.save_transcript(
-        video_id=vid,
-        url=url,
-        title=video_title,
-        channel=video_info.get("channel", ""),
-        channel_url="",
-        duration=video_info.get("duration", 0),
-        upload_date=video_info.get("upload_date", ""),
-        language=lang,
-        source=source,
-        fmt=fmt,
-        content=content,
-    )
+
+    # Cache the transcript text.
+    if content is None:
+        out_file = output_dir / f"{video_title}.txt"
+        if fmt == "txt" and out_file.exists():
+            content = out_file.read_text(encoding="utf-8")
+    if content:
+        cache_db.save_transcript(
+            video_id=vid,
+            url=url,
+            title=video_title,
+            channel=video_info.get("channel", ""),
+            channel_url="",
+            duration=video_info.get("duration", 0),
+            upload_date=video_info.get("upload_date", ""),
+            language=lang,
+            source=source,
+            fmt="txt",
+            content=content,
+        )
+
+    # Cache the summary if one was produced.
+    if summary:
+        cache_db.save_summary(vid, summary, summarize_cmd or "")
 
 
 def process_video(
@@ -337,6 +346,13 @@ def process_video(
                     if vtt_files:
                         final_vtt = work_path / f"{video_title}.vtt"
                         vtt_files[0].rename(final_vtt)
+                        # Extract transcript text for caching before _render_output consumes the VTT.
+                        cache_text = None
+                        if use_cache and not stdout_mode:
+                            try:
+                                cache_text = extract_vtt_plain_text(final_vtt)
+                            except Exception:
+                                pass
                         _, summary_md = _render_output(
                             final_vtt,
                             {"title": video_title, "url": url, "duration": video_duration, "whisper": False, "channel": metadata.get("channel", ""), "upload_date": metadata.get("upload_date", "")},
@@ -344,7 +360,7 @@ def process_video(
                             summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                             output_dir=final_output_dir,
                         )
-                        _maybe_cache(url, video_title, video_info, metadata, lang, "subtitles", fmt, stdout_mode, summarize, use_cache, final_output_dir)
+                        _maybe_cache(url, video_title, video_info, metadata, lang, "subtitles", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text, summary=summary_md, summarize_cmd=summarize_cmd)
                         return (video_title, summary_md, video_info)
 
                 warn("No subtitles available.")
@@ -368,6 +384,13 @@ def process_video(
             # Post-process Whisper output
             vtt_file = work_path / f"{video_title}.vtt"
             if vtt_file.exists():
+                # Extract transcript text for caching before _render_output consumes the VTT.
+                cache_text = None
+                if use_cache and not stdout_mode:
+                    try:
+                        cache_text = extract_vtt_plain_text(vtt_file)
+                    except Exception:
+                        pass
                 _, summary_md = _render_output(
                     vtt_file,
                     {"title": video_title, "url": url, "duration": video_duration, "whisper": True, "channel": metadata.get("channel", ""), "upload_date": metadata.get("upload_date", "")},
@@ -375,7 +398,7 @@ def process_video(
                     summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                     output_dir=final_output_dir,
                 )
-                _maybe_cache(url, video_title, video_info, metadata, lang, "whisper", fmt, stdout_mode, summarize, use_cache, final_output_dir)
+                _maybe_cache(url, video_title, video_info, metadata, lang, "whisper", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text, summary=summary_md, summarize_cmd=summarize_cmd)
                 return (video_title, summary_md, video_info)
 
         return (video_title, None, video_info)
