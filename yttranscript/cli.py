@@ -14,11 +14,12 @@ from .config import (
     CONFIG_PATH, DEFAULTS, load_config, resolve_value, ensure_config_dir, hidden_keys,
     resolve_channel_group,
 )
-from .util import is_youtube_url, is_valid_lang_code, sanitize_filename, TranscriptError
+from .util import is_youtube_url, is_valid_lang_code, sanitize_filename, TranscriptError, format_duration
 from .ytdlp import list_channel_videos
 from .core import process_video
 from .pdf import markdown_to_merged, PANDOC_FORMATS
 from .web import run_server
+from . import db as cache_db
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -194,6 +195,42 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="NAME",
         help="Transcribe all channels in a named group from config (requires --transcribe).",
     )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Skip cache lookup. Force re-download/transcription.",
+    )
+    parser.add_argument(
+        "--history",
+        nargs="?",
+        const=20,
+        type=int,
+        default=None,
+        metavar="N",
+        help="List N most recently transcribed videos from cache (default: 20).",
+    )
+    parser.add_argument(
+        "--cache-clear",
+        action="store_true",
+        help="Delete all cached transcripts and history.",
+    )
+    parser.add_argument(
+        "--cache-remove",
+        default=None,
+        metavar="URL",
+        help="Remove a specific video from cache by URL or video ID.",
+    )
+    parser.add_argument(
+        "--cache-info",
+        default=None,
+        metavar="URL",
+        help="Show cached information for a video.",
+    )
+    parser.add_argument(
+        "--cache-stats",
+        action="store_true",
+        help="Show cache statistics.",
+    )
     return parser
 
 
@@ -246,6 +283,8 @@ def _validate_args(parser: argparse.ArgumentParser, args) -> None:
 def transcribe_batch(videos, args, channel_name: str = "", sections_list: list | None = None) -> None:
     """Transcribe a batch of videos listed by --latest --transcribe."""
     config = load_config()
+    cache_enabled = config.get("cache_enabled", DEFAULTS["cache_enabled"])
+    use_cache = cache_enabled and not args.no_cache
     lang = resolve_value(args.lang, config, "lang")
     fmt = resolve_value(args.format, config, "format")
     timestamps = resolve_value(args.timestamps, config, "timestamps") or False
@@ -300,6 +339,7 @@ def transcribe_batch(videos, args, channel_name: str = "", sections_list: list |
                 fallback_lang=fallback_lang,
                 work_dir=args.work_dir,
                 output_dir=args.output_dir,
+                use_cache=use_cache,
             )
             succeeded += 1
             if args.merge and result and result[1]:
@@ -355,12 +395,86 @@ def main() -> None:
     if args.show_config:
         show_config()
 
+    # --- Cache management commands (no URL needed) ---
+    if args.cache_clear:
+        count = cache_db.clear_all()
+        info(f"Cleared {count} videos from cache.")
+        sys.exit(0)
+
+    if args.cache_remove:
+        vid = cache_db.extract_video_id(args.cache_remove) or args.cache_remove
+        if cache_db.remove_video(vid):
+            info(f"Removed {vid} from cache.")
+        else:
+            warn(f"{vid} not found in cache.")
+        sys.exit(0)
+
+    if args.cache_stats:
+        stats = cache_db.get_stats()
+        print(f"\n  {Colors.BOLD}Cache Statistics{Colors.RESET}\n")
+        print(f"  Total videos:      {stats['total_videos']}")
+        print(f"  Total transcripts: {stats['total_transcripts']}")
+        print(f"  Total summaries:   {stats['total_summaries']}")
+        if stats["by_format"]:
+            formats = ", ".join(f"{k}={v}" for k, v in sorted(stats["by_format"].items()))
+            print(f"  By format:         {formats}")
+        if stats["by_channel"]:
+            channels = ", ".join(f"{k}={v}" for k, v in stats["by_channel"].items())
+            print(f"  Top channels:      {channels}")
+        size_mb = stats["db_size_bytes"] / (1024 * 1024)
+        print(f"  Database size:     {size_mb:.1f} MB\n")
+        sys.exit(0)
+
+    if args.history is not None:
+        entries = cache_db.list_history(limit=args.history)
+        if not entries:
+            warn("Cache is empty.")
+        else:
+            print(f"\n  {Colors.BOLD}Recent Transcriptions{Colors.RESET}\n")
+            for e in entries:
+                date = (e.get("last_accessed") or "")[:10]
+                title = (e.get("title") or "?")[:60]
+                channel = e.get("channel") or "?"
+                dur = format_duration(e.get("duration") or 0)
+                lang = e.get("language") or "?"
+                fmts = e.get("formats") or ""
+                url = e.get("url") or ""
+                print(f"  {date}  {title}")
+                print(f"    {channel} · {dur} · {lang} · formats: {fmts}")
+                print(f"    {url}")
+                print()
+        sys.exit(0)
+
+    if args.cache_info:
+        vid = cache_db.extract_video_id(args.cache_info) or args.cache_info
+        entry = cache_db.get_video_info(vid)
+        if not entry:
+            warn(f"{vid} not found in cache.")
+            sys.exit(0)
+        print(f"\n  {Colors.BOLD}Cache Info: {vid}{Colors.RESET}\n")
+        print(f"  Title:       {entry.get('title', '?')}")
+        print(f"  URL:         {entry.get('url', '?')}")
+        print(f"  Channel:     {entry.get('channel', '?')}")
+        print(f"  Duration:    {format_duration(entry.get('duration') or 0)}")
+        print(f"  Upload date: {entry.get('upload_date', '?')}")
+        print(f"  First seen:  {entry.get('first_seen', '?')}")
+        print(f"  Last access: {entry.get('last_accessed', '?')}")
+        if entry.get("cached_formats"):
+            fmts = ", ".join(
+                f"{f['format']}/{f['language']}" for f in entry["cached_formats"]
+            )
+            print(f"  Cached as:   {fmts}")
+        if entry.get("summaries"):
+            print(f"  Summaries:   {len(entry['summaries'])}")
+        print()
+        sys.exit(0)
+
     if args.serve:
         run_server(args.port)
         return
 
     if not args.url and not args.group:
-        parser.error("a YouTube URL is required (or use --serve or --group)")
+        parser.error("a YouTube URL is required (or use --serve, --group, --history, or --cache-*)")
 
     if args.url and not is_youtube_url(args.url):
         parser.error(f"not a YouTube URL: {args.url!r}")
@@ -408,6 +522,9 @@ def main() -> None:
 
     config = load_config()
 
+    cache_enabled = config.get("cache_enabled", DEFAULTS["cache_enabled"])
+    use_cache = cache_enabled and not args.no_cache
+
     lang = resolve_value(args.lang, config, "lang")
     fmt = resolve_value(args.format, config, "format")
     timestamps = resolve_value(args.timestamps, config, "timestamps") or False
@@ -443,6 +560,7 @@ def main() -> None:
             fallback_lang=fallback_lang,
             work_dir=args.work_dir,
             output_dir=args.output_dir,
+            use_cache=use_cache,
         )
     except KeyboardInterrupt:
         print()

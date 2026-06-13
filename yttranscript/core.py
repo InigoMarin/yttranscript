@@ -30,6 +30,7 @@ from .ytdlp import (
     try_download_subtitle,
     get_lang_variants,
 )
+from . import db as cache_db
 
 
 def _render_output(
@@ -151,6 +152,48 @@ def _render_output(
     return (out, None)
 
 
+def _maybe_cache(
+    url: str,
+    video_title: str,
+    video_info: dict,
+    metadata: dict,
+    lang: str,
+    source: str,
+    fmt: str,
+    stdout_mode: bool,
+    summarize: bool,
+    use_cache: bool,
+    output_dir: Path,
+) -> None:
+    """Save transcript to cache DB if applicable.
+
+    Only caches ``txt`` format, non-stdout, non-summarize results.
+    Reads the generated output file to store its content.
+    """
+    if not use_cache or stdout_mode or summarize or fmt != "txt":
+        return
+    vid = cache_db.extract_video_id(url)
+    if not vid:
+        return
+    out_file = output_dir / f"{video_title}.txt"
+    if not out_file.exists():
+        return
+    content = out_file.read_text(encoding="utf-8")
+    cache_db.save_transcript(
+        video_id=vid,
+        url=url,
+        title=video_title,
+        channel=video_info.get("channel", ""),
+        channel_url="",
+        duration=video_info.get("duration", 0),
+        upload_date=video_info.get("upload_date", ""),
+        language=lang,
+        source=source,
+        fmt=fmt,
+        content=content,
+    )
+
+
 def process_video(
     url: str,
     output: Optional[str] = None,
@@ -174,6 +217,7 @@ def process_video(
     log_callback: Optional[Callable[[str, str], None]] = None,
     work_dir: Optional[str] = None,
     output_dir: Optional[str] = None,
+    use_cache: bool = True,
 ) -> Optional[tuple[str, Optional[str], dict]]:
     """Main processing pipeline. Returns (video_title, summary_markdown, video_info) or None.
 
@@ -247,6 +291,20 @@ def process_video(
             }
             video_duration = video_info["duration"]
 
+            # --- Cache lookup: skip download if we already have this transcript ---
+            if use_cache and not stdout_mode and not summarize and fmt == "txt":
+                vid = cache_db.extract_video_id(url)
+                if vid:
+                    cached = cache_db.get_cached(vid, fmt, lang, timestamps=timestamps)
+                    if cached:
+                        content, cached_info = cached
+                        info("Found in cache — skipping download.")
+                        out = final_output_dir / f"{video_title}.txt"
+                        final_output_dir.mkdir(parents=True, exist_ok=True)
+                        out.write_text(content, encoding="utf-8")
+                        success(f"Saved (cached): {out}")
+                        return (video_title, None, video_info)
+
             # Intermediate files go into work_path (absolute paths so subprocesses
             # write there regardless of the process CWD; thread-safe under the web
             # server, and avoids polluting the user's CWD).
@@ -286,6 +344,7 @@ def process_video(
                             summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                             output_dir=final_output_dir,
                         )
+                        _maybe_cache(url, video_title, video_info, metadata, lang, "subtitles", fmt, stdout_mode, summarize, use_cache, final_output_dir)
                         return (video_title, summary_md, video_info)
 
                 warn("No subtitles available.")
@@ -316,6 +375,7 @@ def process_video(
                     summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                     output_dir=final_output_dir,
                 )
+                _maybe_cache(url, video_title, video_info, metadata, lang, "whisper", fmt, stdout_mode, summarize, use_cache, final_output_dir)
                 return (video_title, summary_md, video_info)
 
         return (video_title, None, video_info)

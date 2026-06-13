@@ -41,6 +41,7 @@ DEFAULTS = {
     "whisper_dir": None,
     "port": 8080,
     "output": None,
+    "cache_enabled": True,
 }
 
 # Keys not shown in --show-config / config template (CLI-only or runtime-only).
