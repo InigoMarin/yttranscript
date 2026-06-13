@@ -285,23 +285,65 @@ def _validate_args(parser: argparse.ArgumentParser, args) -> None:
         parser.error("--group requires --transcribe")
 
 
+def _resolve_options(args, config: dict) -> dict:
+    """Resolve all CLI options from args + config in one pass."""
+    cache_enabled = config.get("cache_enabled", DEFAULTS["cache_enabled"])
+    use_cache = cache_enabled and not args.no_cache
+    return {
+        "lang": resolve_value(args.lang, config, "lang"),
+        "fmt": resolve_value(args.format, config, "format"),
+        "timestamps": resolve_value(args.timestamps, config, "timestamps") or False,
+        "chunk_size": resolve_value(args.chunk_size, config, "chunk_size"),
+        "summarize_cmd": resolve_value(args.summarize_cmd, config, "summarize_cmd"),
+        "summarize_prompt": resolve_value(args.summarize_prompt, config, "summarize_prompt"),
+        "summarize_timeout": resolve_value(None, config, "summarize_timeout"),
+        "fallback_lang": resolve_value(None, config, "fallback_lang"),
+        "whisper_model": resolve_value(args.whisper_model, config, "whisper_model"),
+        "whisper_dir": resolve_value(args.whisper_dir, config, "whisper_dir"),
+        "whisper_device": resolve_value(args.whisper_device, config, "whisper_device"),
+        "use_cache": use_cache,
+        "skip_cached": use_cache and args.skip_cached,
+    }
+
+
+def _merge_output_path(args, fmt: str, default_name: str) -> Path:
+    """Compute the output path for a merged document."""
+    output_dir = Path(args.output_dir) if args.output_dir else Path.cwd()
+    merge_ext = f".{fmt}"
+    if args.output:
+        merge_name = f"{args.output}_merged{merge_ext}"
+    else:
+        merge_name = f"{sanitize_filename(default_name or 'merged')}{merge_ext}"
+    return output_dir / merge_name
+
+
+def _do_merge(sections: list, args, fmt: str, channel_name: str) -> None:
+    """Generate a merged document from collected sections."""
+    merge_path = _merge_output_path(args, fmt, channel_name)
+    try:
+        markdown_to_merged(sections, merge_path, fmt=fmt, channel_name=channel_name)
+        info(f"Merged {fmt.upper()}: {merge_path}")
+    except Exception as e:
+        error(f"Failed to generate merged {fmt.upper()}: {e}")
+
+
 def transcribe_batch(videos, args, channel_name: str = "", sections_list: list | None = None) -> None:
     """Transcribe a batch of videos listed by --latest --transcribe."""
     config = load_config()
-    cache_enabled = config.get("cache_enabled", DEFAULTS["cache_enabled"])
-    use_cache = cache_enabled and not args.no_cache
-    skip_cached = use_cache and args.skip_cached
-    lang = resolve_value(args.lang, config, "lang")
-    fmt = resolve_value(args.format, config, "format")
-    timestamps = resolve_value(args.timestamps, config, "timestamps") or False
-    chunk_size = resolve_value(args.chunk_size, config, "chunk_size")
-    summarize_cmd = resolve_value(args.summarize_cmd, config, "summarize_cmd")
-    summarize_prompt = resolve_value(args.summarize_prompt, config, "summarize_prompt")
-    summarize_timeout = resolve_value(None, config, "summarize_timeout")
-    fallback_lang = resolve_value(None, config, "fallback_lang")
-    whisper_model = resolve_value(args.whisper_model, config, "whisper_model")
-    whisper_dir = resolve_value(args.whisper_dir, config, "whisper_dir")
-    whisper_device = resolve_value(args.whisper_device, config, "whisper_device")
+    opts = _resolve_options(args, config)
+    lang = opts["lang"]
+    fmt = opts["fmt"]
+    timestamps = opts["timestamps"]
+    chunk_size = opts["chunk_size"]
+    summarize_cmd = opts["summarize_cmd"]
+    summarize_prompt = opts["summarize_prompt"]
+    summarize_timeout = opts["summarize_timeout"]
+    fallback_lang = opts["fallback_lang"]
+    whisper_model = opts["whisper_model"]
+    whisper_dir = opts["whisper_dir"]
+    whisper_device = opts["whisper_device"]
+    use_cache = opts["use_cache"]
+    skip_cached = opts["skip_cached"]
 
     if args.merge and fmt not in PANDOC_FORMATS:
         from .log import error as _error
@@ -368,18 +410,7 @@ def transcribe_batch(videos, args, channel_name: str = "", sections_list: list |
             failed += 1
 
     if args.merge and collected_sections and sections_list is None:
-        output_dir = Path(args.output_dir) if args.output_dir else Path.cwd()
-        merge_ext = f".{fmt}"
-        if args.output:
-            merge_name = f"{args.output}_merged{merge_ext}"
-        else:
-            merge_name = f"{sanitize_filename(channel_name or 'merged')}{merge_ext}"
-        merge_path = output_dir / merge_name
-        try:
-            markdown_to_merged(collected_sections, merge_path, fmt=fmt, channel_name=channel_name)
-            info(f"Merged {fmt.upper()}: {merge_path}")
-        except Exception as e:
-            error(f"Failed to generate merged {fmt.upper()}: {e}")
+        _do_merge(collected_sections, args, fmt, channel_name)
 
     info(f"Done: {succeeded} transcribed, {failed} failed.")
 
@@ -505,18 +536,7 @@ def main() -> None:
             all_sections.extend(batch_sections)
         if args.merge and all_sections:
             fmt = resolve_value(args.format, config, "format")
-            output_dir = Path(args.output_dir) if args.output_dir else Path.cwd()
-            merge_ext = f".{fmt}"
-            if args.output:
-                merge_name = f"{args.output}_merged{merge_ext}"
-            else:
-                merge_name = f"{sanitize_filename(args.group)}{merge_ext}"
-            merge_path = output_dir / merge_name
-            try:
-                markdown_to_merged(all_sections, merge_path, fmt=fmt, channel_name=args.group)
-                info(f"Merged {fmt.upper()}: {merge_path}")
-            except Exception as e:
-                error(f"Failed to generate merged {fmt.upper()}: {e}")
+            _do_merge(all_sections, args, fmt, args.group)
         return
 
     if args.latest is not None:
@@ -529,48 +549,33 @@ def main() -> None:
         return
 
     config = load_config()
-
-    cache_enabled = config.get("cache_enabled", DEFAULTS["cache_enabled"])
-    use_cache = cache_enabled and not args.no_cache
-    skip_cached = use_cache and args.skip_cached
-
-    lang = resolve_value(args.lang, config, "lang")
-    fmt = resolve_value(args.format, config, "format")
-    timestamps = resolve_value(args.timestamps, config, "timestamps") or False
-    chunk_size = resolve_value(args.chunk_size, config, "chunk_size")
-    summarize_cmd = resolve_value(args.summarize_cmd, config, "summarize_cmd")
-    summarize_prompt = resolve_value(args.summarize_prompt, config, "summarize_prompt")
-    summarize_timeout = resolve_value(None, config, "summarize_timeout")
-    fallback_lang = resolve_value(None, config, "fallback_lang")
-    whisper_model = resolve_value(args.whisper_model, config, "whisper_model")
-    whisper_dir = resolve_value(args.whisper_dir, config, "whisper_dir")
-    whisper_device = resolve_value(args.whisper_device, config, "whisper_device")
+    opts = _resolve_options(args, config)
 
     try:
         process_video(
             url=args.url,
             output=args.output,
-            fmt=fmt,
-            lang=lang,
+            fmt=opts["fmt"],
+            lang=opts["lang"],
             list_only=args.list_subs,
             force_whisper=args.whisper,
-            whisper_model=whisper_model,
-            whisper_dir=whisper_dir,
-            whisper_device=whisper_device,
+            whisper_model=opts["whisper_model"],
+            whisper_dir=opts["whisper_dir"],
+            whisper_device=opts["whisper_device"],
             keep_vtt=args.keep_vtt,
             keep_audio=args.keep_audio,
             stdout_mode=args.stdout,
-            timestamps=timestamps,
-            chunk_size=chunk_size,
+            timestamps=opts["timestamps"],
+            chunk_size=opts["chunk_size"],
             summarize=args.summarize,
-            summarize_cmd=summarize_cmd,
-            summarize_prompt=summarize_prompt,
-            summarize_timeout=summarize_timeout,
-            fallback_lang=fallback_lang,
+            summarize_cmd=opts["summarize_cmd"],
+            summarize_prompt=opts["summarize_prompt"],
+            summarize_timeout=opts["summarize_timeout"],
+            fallback_lang=opts["fallback_lang"],
             work_dir=args.work_dir,
             output_dir=args.output_dir,
-            use_cache=use_cache,
-            skip_cached=skip_cached,
+            use_cache=opts["use_cache"],
+            skip_cached=opts["skip_cached"],
         )
     except KeyboardInterrupt:
         print()

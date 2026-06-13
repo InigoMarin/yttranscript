@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import shutil
 import sys
 import tempfile
@@ -31,6 +32,22 @@ from .ytdlp import (
     get_lang_variants,
 )
 from . import db as cache_db
+
+
+@dataclasses.dataclass
+class VideoInfo:
+    """Standard metadata container for a processed video."""
+    title: str
+    url: str
+    duration: int = 0
+    size: int = 0
+    channel: str = ""
+    upload_date: str = ""
+    language: str = ""
+    source: str = "subtitles"
+
+    def to_dict(self) -> dict:
+        return dataclasses.asdict(self)
 
 
 def _render_output(
@@ -286,14 +303,15 @@ def process_video(
                 success(f"Video: {video_title}")
 
             # Build video_info from single metadata call; reused by Whisper below.
-            video_info = {
-                "duration": metadata["duration"],
-                "size": metadata["size"],
-                "title": metadata["title"],
-                "channel": metadata.get("channel", ""),
-                "upload_date": metadata.get("upload_date", ""),
-            }
-            video_duration = video_info["duration"]
+            video_info = VideoInfo(
+                duration=metadata["duration"],
+                size=metadata["size"],
+                title=metadata["title"],
+                channel=metadata.get("channel", ""),
+                upload_date=metadata.get("upload_date", ""),
+                url=url,
+                language=lang,
+            )
 
             # --- Cache lookup: skip download if we already have this transcript ---
             if use_cache and not stdout_mode:
@@ -312,29 +330,29 @@ def process_video(
                             if not summary:
                                 raise TranscriptError("Summarization failed.")
                             final_output_dir.mkdir(parents=True, exist_ok=True)
-                            full_text = format_video_header(video_info) + summary + "\n"
-                            safe_title = sanitize_filename(video_info.get('title', 'transcript'))
+                            full_text = format_video_header(video_info.to_dict()) + summary + "\n"
+                            safe_title = sanitize_filename(video_info.title)
                             if fmt == "pdf":
                                 out = final_output_dir / f"{safe_title}.pdf"
-                                markdown_to_pdf(summary, out, video_info=video_info)
+                                markdown_to_pdf(summary, out, video_info=video_info.to_dict())
                             elif fmt == "epub":
                                 out = final_output_dir / f"{safe_title}.epub"
-                                markdown_to_epub(summary, out, video_info=video_info)
+                                markdown_to_epub(summary, out, video_info=video_info.to_dict())
                             elif fmt == "docx":
                                 out = final_output_dir / f"{safe_title}.docx"
-                                markdown_to_docx(summary, out, video_info=video_info)
+                                markdown_to_docx(summary, out, video_info=video_info.to_dict())
                             else:
                                 out = final_output_dir / f"{safe_title}.txt"
                                 out.write_text(full_text, encoding="utf-8")
                             success(f"Saved: {out}")
-                            return (video_title, summary, video_info)
+                            return (video_title, summary, video_info.to_dict())
                         elif fmt == "txt":
                             info("Found in cache — skipping download.")
                             out = final_output_dir / f"{video_title}.txt"
                             final_output_dir.mkdir(parents=True, exist_ok=True)
                             out.write_text(content, encoding="utf-8")
                             success(f"Saved (cached): {out}")
-                            return (video_title, None, video_info)
+                            return (video_title, None, video_info.to_dict())
 
             # Intermediate files go into work_path (absolute paths so subprocesses
             # write there regardless of the process CWD; thread-safe under the web
@@ -377,13 +395,13 @@ def process_video(
                                 pass
                         _, summary_md = _render_output(
                             final_vtt,
-                            {"title": video_title, "url": url, "duration": video_duration, "whisper": False, "channel": metadata.get("channel", ""), "upload_date": metadata.get("upload_date", "")},
+                            video_info.to_dict(),
                             fmt, stdout_mode, timestamps, chunk_size,
                             summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                             output_dir=final_output_dir,
                         )
-                        _maybe_cache(url, video_title, video_info, metadata, lang, "subtitles", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text)
-                        return (video_title, summary_md, video_info)
+                        _maybe_cache(url, video_title, video_info.to_dict(), metadata, lang, "subtitles", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text)
+                        return (video_title, summary_md, video_info.to_dict())
 
                 warn("No subtitles available.")
             else:
@@ -394,7 +412,7 @@ def process_video(
                 url, video_title, model=whisper_model, language=lang,
                 keep_audio=keep_audio, download_dir=whisper_dir,
                 device=whisper_device, quiet=stdout_mode or log.VERBOSITY == 0,
-                video_info=video_info,
+                video_info=video_info.to_dict(),
                 work_dir=work_path,
                 keep_audio_dir=final_output_dir if keep_audio else None,
             ):
@@ -415,15 +433,15 @@ def process_video(
                         pass
                 _, summary_md = _render_output(
                     vtt_file,
-                    {"title": video_title, "url": url, "duration": video_duration, "whisper": True, "channel": metadata.get("channel", ""), "upload_date": metadata.get("upload_date", "")},
+                    video_info.to_dict(),
                     fmt, stdout_mode, timestamps, chunk_size,
                     summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                     output_dir=final_output_dir,
                 )
-                _maybe_cache(url, video_title, video_info, metadata, lang, "whisper", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text)
-                return (video_title, summary_md, video_info)
+                _maybe_cache(url, video_title, video_info.to_dict(), metadata, lang, "whisper", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text)
+                return (video_title, summary_md, video_info.to_dict())
 
-        return (video_title, None, video_info)
+        return (video_title, None, video_info.to_dict())
     finally:
         if work_ctx is not None:
             work_ctx.cleanup()

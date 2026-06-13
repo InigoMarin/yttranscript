@@ -149,9 +149,7 @@ def get_video_metadata(url: str) -> dict:
     channel = data.get("channel") or data.get("uploader") or ""
 
     upload_date_raw = data.get("upload_date") or ""
-    upload_date = ""
-    if len(upload_date_raw) == 8:
-        upload_date = f"{upload_date_raw[:4]}-{upload_date_raw[4:6]}-{upload_date_raw[6:8]}"
+    upload_date = _parse_upload_date(upload_date_raw)
 
     is_live = data.get("is_live") or data.get("live_status") == "is_live"
 
@@ -234,6 +232,13 @@ def list_channel_videos(url: str, limit: int = 10) -> tuple[str, list[tuple[str,
     return channel_name, videos
 
 
+def _parse_upload_date(raw: str) -> str:
+    """Convert a yt-dlp YYYYMMDD date to ISO YYYY-MM-DD."""
+    if len(raw) == 8:
+        return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+    return ""
+
+
 def get_video_info(url: str) -> dict:
     """Get basic video info."""
     fmt = "%(duration)s|%(filesize_approx)s|%(title)s|%(channel)s|%(upload_date)s"
@@ -256,9 +261,7 @@ def get_video_info(url: str) -> dict:
     title = parts[2] if len(parts) > 2 else "unknown"
     channel = parts[3] if len(parts) > 3 and parts[3] != "NA" else ""
     upload_date_raw = parts[4] if len(parts) > 4 and parts[4] != "NA" else ""
-    upload_date = ""
-    if len(upload_date_raw) == 8:
-        upload_date = f"{upload_date_raw[:4]}-{upload_date_raw[4:6]}-{upload_date_raw[6:8]}"
+    upload_date = _parse_upload_date(upload_date_raw)
     return {"duration": duration, "size": size, "title": title, "channel": channel, "upload_date": upload_date}
 
 

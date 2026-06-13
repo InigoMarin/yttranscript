@@ -30,8 +30,9 @@ from pathlib import Path
 
 from .log import success, warn, ThreadLocalStdout, stdout_capture
 from .config import load_config, resolve_value
-from .util import sanitize_filename, TranscriptError, is_valid_lang_code
+from .util import sanitize_filename, is_valid_lang_code
 from .core import process_video
+from .pdf import PANDOC_FORMATS
 
 
 # Cap concurrent /api transcriptions. Each one spawns yt-dlp (+ possibly
@@ -49,8 +50,6 @@ def _allowed_origins(port: int) -> set[str]:
 
 
 _WEB_HTML = (Path(__file__).parent / "web_ui.html").read_text(encoding="utf-8")
-
-_BINARY_FORMATS = {"pdf", "epub", "docx"}
 
 _DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "yttranscript-downloads"
 _DOWNLOAD_TTL = 600
@@ -190,142 +189,107 @@ class TranscriptHandler(BaseHTTPRequestHandler):
             wfile.write(f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode())
             wfile.flush()
 
-        # Rate limit: don't let one client exhaust resources.
-        if not _transcription_slots.acquire(blocking=False):
+        def safe_send(data: dict):
             try:
-                send_event({
-                    "type": "error",
-                    "message": (
-                        f"Server busy: {MAX_CONCURRENT_TRANSCRIPTIONS} transcriptions "
-                        f"already running. Please retry shortly."
-                    ),
-                })
+                send_event(data)
             except (BrokenPipeError, ConnectionResetError, OSError):
                 pass
+
+        # Rate limit: don't let one client exhaust resources.
+        if not _transcription_slots.acquire(blocking=False):
+            safe_send({
+                "type": "error",
+                "message": (
+                    f"Server busy: {MAX_CONCURRENT_TRANSCRIPTIONS} transcriptions "
+                    f"already running. Please retry shortly."
+                ),
+            })
             self.close_connection = True
             return
 
         def log_callback(level: str, msg: str):
-            send_event({"type": level, "message": msg})
+            safe_send({"type": level, "message": msg})
 
         config = load_config()
+        common_kwargs = dict(
+            url=url, fmt=fmt, lang=lang, timestamps=timestamps,
+            summarize=summarize,
+            summarize_cmd=resolve_value(None, config, "summarize_cmd"),
+            summarize_prompt=resolve_value(None, config, "summarize_prompt"),
+            summarize_timeout=resolve_value(None, config, "summarize_timeout"),
+            fallback_lang=resolve_value(None, config, "fallback_lang"),
+            log_callback=log_callback,
+        )
 
         title = "transcript"
         try:
-            if fmt in _BINARY_FORMATS:
-                _DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-                download_id = secrets.token_urlsafe(16)
-                bin_dir = _DOWNLOAD_DIR / download_id
-                bin_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-
-                try:
-                    result = process_video(
-                        url=url,
-                        fmt=fmt,
-                        lang=lang,
-                        timestamps=timestamps,
-                        summarize=summarize,
-                        summarize_cmd=resolve_value(None, config, "summarize_cmd"),
-                        summarize_prompt=resolve_value(None, config, "summarize_prompt"),
-                        summarize_timeout=resolve_value(None, config, "summarize_timeout"),
-                        fallback_lang=resolve_value(None, config, "fallback_lang"),
-                        stdout_mode=False,
-                        output_dir=str(bin_dir),
-                        log_callback=log_callback,
-                    )
-                    if result:
-                        title = result[0]
-                except (BrokenPipeError, ConnectionResetError, OSError):
-                    self.close_connection = True
-                    return
-                except TranscriptError as e:
-                    try:
-                        send_event({"type": "error", "message": str(e)})
-                    except (BrokenPipeError, ConnectionResetError, OSError):
-                        pass
-                    self.close_connection = True
-                    return
-                except Exception as e:
-                    try:
-                        send_event({"type": "error", "message": str(e)})
-                    except (BrokenPipeError, ConnectionResetError, OSError):
-                        pass
-                    self.close_connection = True
-                    return
-
-                ext = {"pdf": ".pdf", "epub": ".epub", "docx": ".docx"}[fmt]
-                filename = sanitize_filename(title) + ext
-
-                files = list(bin_dir.glob(f"*{ext}"))
-                if not files:
-                    try:
-                        send_event({"type": "error", "message": "Failed to generate output file."})
-                    except (BrokenPipeError, ConnectionResetError, OSError):
-                        pass
-                    self.close_connection = True
-                    return
-
-                with _downloads_lock:
-                    _downloads[download_id] = (str(files[0]), time.time())
-                try:
-                    send_event({
-                        "type": "done",
-                        "download": f"/download/{download_id}",
-                        "title": title,
-                        "filename": filename,
-                    })
-                except (BrokenPipeError, ConnectionResetError, OSError):
-                    pass
+            if fmt in PANDOC_FORMATS:
+                self._handle_binary(common_kwargs, send_event, safe_send, fmt)
+                title = common_kwargs.get("_title", "transcript")
             else:
                 buf = io.StringIO()
                 with stdout_capture(buf):
                     try:
-                        result = process_video(
-                            url=url,
-                            fmt=fmt,
-                            lang=lang,
-                            timestamps=timestamps,
-                            summarize=summarize,
-                            summarize_cmd=resolve_value(None, config, "summarize_cmd"),
-                            summarize_prompt=resolve_value(None, config, "summarize_prompt"),
-                            summarize_timeout=resolve_value(None, config, "summarize_timeout"),
-                            fallback_lang=resolve_value(None, config, "fallback_lang"),
-                            stdout_mode=True,
-                            log_callback=log_callback,
-                        )
+                        result = process_video(stdout_mode=True, **common_kwargs)
                         if result:
                             title = result[0]
                     except (BrokenPipeError, ConnectionResetError, OSError):
                         self.close_connection = True
                         return
-                    except TranscriptError as e:
-                        try:
-                            send_event({"type": "error", "message": str(e)})
-                        except (BrokenPipeError, ConnectionResetError, OSError):
-                            pass
-                        self.close_connection = True
-                        return
                     except Exception as e:
-                        try:
-                            send_event({"type": "error", "message": str(e)})
-                        except (BrokenPipeError, ConnectionResetError, OSError):
-                            pass
+                        safe_send({"type": "error", "message": str(e)})
                         self.close_connection = True
                         return
 
                 text = buf.getvalue()
-                ext = {
-                    "json": ".json", "txt": ".txt", "vtt": ".vtt", "srt": ".srt",
-                }.get(fmt, ".txt")
+                ext = {"json": ".json", "txt": ".txt", "vtt": ".vtt", "srt": ".srt"}.get(fmt, ".txt")
                 filename = sanitize_filename(title) + ext
-                try:
-                    send_event({"type": "done", "text": text, "title": title, "filename": filename})
-                except (BrokenPipeError, ConnectionResetError, OSError):
-                    pass
+                safe_send({"type": "done", "text": text, "title": title, "filename": filename})
         finally:
             _transcription_slots.release()
 
         self.close_connection = True
+
+    def _handle_binary(self, common_kwargs, send_event, safe_send, fmt):
+        """Handle binary format (PDF/EPUB/DOCX) transcription + download link."""
+        _DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+        download_id = secrets.token_urlsafe(16)
+        bin_dir = _DOWNLOAD_DIR / download_id
+        bin_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+        title = "transcript"
+        try:
+            result = process_video(
+                stdout_mode=False, output_dir=str(bin_dir), **common_kwargs,
+            )
+            if result:
+                title = result[0]
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            self.close_connection = True
+            return
+        except Exception as e:
+            safe_send({"type": "error", "message": str(e)})
+            self.close_connection = True
+            return
+
+        ext = {"pdf": ".pdf", "epub": ".epub", "docx": ".docx"}[fmt]
+        filename = sanitize_filename(title) + ext
+
+        files = list(bin_dir.glob(f"*{ext}"))
+        if not files:
+            safe_send({"type": "error", "message": "Failed to generate output file."})
+            self.close_connection = True
+            return
+
+        with _downloads_lock:
+            _downloads[download_id] = (str(files[0]), time.time())
+        safe_send({
+            "type": "done",
+            "download": f"/download/{download_id}",
+            "title": title,
+            "filename": filename,
+        })
+        common_kwargs["_title"] = title
 
     def _json_response(self, data):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")

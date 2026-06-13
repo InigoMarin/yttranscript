@@ -738,3 +738,56 @@ def test_main_group_no_merge_without_flag(monkeypatch):
     ])
     main()
     mock_merge.assert_not_called()
+
+
+# --- __main__.py exit code propagation -------------------------------------
+
+def test_main_module_propagates_exit_code_2(monkeypatch):
+    """python -m yttranscript with no args should exit 2."""
+    result = subprocess.run(
+        ["python", "-m", "yttranscript"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 2
+
+
+def test_main_module_propagates_exit_code_0(monkeypatch):
+    """python -m yttranscript --version should exit 0."""
+    result = subprocess.run(
+        ["python", "-m", "yttranscript", "--version"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    assert __version__ in result.stdout
+
+
+# --- _resolve_options ------------------------------------------------------
+
+def test_resolve_options_returns_dict():
+    from yttranscript.cli import _resolve_options
+    parser = build_parser()
+    args = parser.parse_args(["https://youtube.com/watch?v=x"])
+    opts = _resolve_options(args, {})
+    assert isinstance(opts, dict)
+    assert opts["fmt"] == "txt"
+    assert opts["lang"] is None
+    assert opts["use_cache"] is True
+    assert opts["skip_cached"] is False
+
+
+def test_resolve_options_respects_no_cache():
+    from yttranscript.cli import _resolve_options
+    parser = build_parser()
+    args = parser.parse_args(["https://youtube.com/watch?v=x", "--no-cache"])
+    opts = _resolve_options(args, {})
+    assert opts["use_cache"] is False
+    assert opts["skip_cached"] is False
+
+
+def test_resolve_options_skip_cached():
+    from yttranscript.cli import _resolve_options
+    parser = build_parser()
+    args = parser.parse_args(["https://youtube.com/watch?v=x", "--skip-cached"])
+    opts = _resolve_options(args, {})
+    assert opts["use_cache"] is True
+    assert opts["skip_cached"] is True

@@ -42,6 +42,20 @@ def test_get_lang_variants(lang, expected):
     assert get_lang_variants(lang) == expected
 
 
+# --- _parse_upload_date ---------------------------------------------------
+
+@pytest.mark.parametrize("raw, expected", [
+    ("20240115", "2024-01-15"),
+    ("20231231", "2023-12-31"),
+    ("", ""),
+    ("short", ""),
+    ("123456789", ""),
+])
+def test_parse_upload_date(raw, expected):
+    from yttranscript.ytdlp import _parse_upload_date
+    assert _parse_upload_date(raw) == expected
+
+
 # --- get_video_info -------------------------------------------------------
 
 def test_get_video_info_success():
