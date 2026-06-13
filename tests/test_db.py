@@ -69,7 +69,7 @@ class TestInitDb:
             "SELECT name FROM sqlite_master WHERE type='table'"
         )}
         conn.close()
-        assert {"videos", "transcripts", "summaries"}.issubset(tables)
+        assert {"videos", "transcripts"}.issubset(tables)
 
     def test_creates_indices(self, dbpath):
         db.init_db(dbpath)
@@ -218,25 +218,6 @@ class TestSaveAndGetCached:
 
 
 # --------------------------------------------------------------------------- #
-#  save_summary
-# --------------------------------------------------------------------------- #
-
-class TestSaveSummary:
-    def test_save_and_retrieve(self, dbpath):
-        db.save_transcript(
-            video_id="abc12345678", url="https://youtube.com/watch?v=abc12345678",
-            title="Test", channel="", channel_url="", duration=100,
-            upload_date="", language="en", source="subtitles",
-            fmt="txt", content="text", path=dbpath,
-        )
-        db.save_summary("abc12345678", "This is a summary.", "llama-cli", path=dbpath)
-        info = db.get_video_info("abc12345678", path=dbpath)
-        assert info is not None
-        assert len(info["summaries"]) == 1
-        assert info["summaries"][0]["summary"] == "This is a summary."
-
-
-# --------------------------------------------------------------------------- #
 #  list_history
 # --------------------------------------------------------------------------- #
 
@@ -332,20 +313,6 @@ class TestGetVideoInfo:
         assert len(info["cached_formats"]) == 1
         assert info["cached_formats"][0]["format"] == "txt"
 
-    def test_includes_summaries(self, dbpath):
-        db.save_transcript(
-            video_id="abc12345678", url="https://youtube.com/watch?v=abc12345678",
-            title="Test", channel="", channel_url="", duration=100,
-            upload_date="", language="en", source="subtitles",
-            fmt="txt", content="text", path=dbpath,
-        )
-        db.save_summary("abc12345678", "Summary 1", "cmd1", path=dbpath)
-        db.save_summary("abc12345678", "Summary 2", "cmd2", path=dbpath)
-        info = db.get_video_info("abc12345678", path=dbpath)
-        assert len(info["summaries"]) == 2
-        # Most recent first
-        assert info["summaries"][0]["summary"] == "Summary 2"
-
 
 # --------------------------------------------------------------------------- #
 #  get_stats
@@ -357,7 +324,6 @@ class TestGetStats:
         stats = db.get_stats(path=dbpath)
         assert stats["total_videos"] == 0
         assert stats["total_transcripts"] == 0
-        assert stats["total_summaries"] == 0
 
     def test_counts(self, dbpath):
         for vid in ["aaa12345678", "bbb12345678"]:
@@ -403,7 +369,6 @@ class TestRemoveVideo:
             upload_date="", language="en", source="subtitles",
             fmt="txt", content="text", path=dbpath,
         )
-        db.save_summary("abc12345678", "summary", "cmd", path=dbpath)
         assert db.remove_video("abc12345678", path=dbpath) is True
         assert db.get_video_info("abc12345678", path=dbpath) is None
 
@@ -427,20 +392,6 @@ class TestRemoveVideo:
         db.remove_video("abc12345678", path=dbpath)
         conn = db.get_connection(dbpath)
         count = conn.execute("SELECT COUNT(*) FROM transcripts").fetchone()[0]
-        conn.close()
-        assert count == 0
-
-    def test_cascade_deletes_summaries(self, dbpath):
-        db.save_transcript(
-            video_id="abc12345678", url="https://youtube.com/watch?v=abc12345678",
-            title="Test", channel="", channel_url="", duration=100,
-            upload_date="", language="en", source="subtitles",
-            fmt="txt", content="text", path=dbpath,
-        )
-        db.save_summary("abc12345678", "summary", "cmd", path=dbpath)
-        db.remove_video("abc12345678", path=dbpath)
-        conn = db.get_connection(dbpath)
-        count = conn.execute("SELECT COUNT(*) FROM summaries").fetchone()[0]
         conn.close()
         assert count == 0
 

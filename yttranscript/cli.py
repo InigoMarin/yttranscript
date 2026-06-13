@@ -414,7 +414,6 @@ def main() -> None:
         print(f"\n  {Colors.BOLD}Cache Statistics{Colors.RESET}\n")
         print(f"  Total videos:      {stats['total_videos']}")
         print(f"  Total transcripts: {stats['total_transcripts']}")
-        print(f"  Total summaries:   {stats['total_summaries']}")
         if stats["by_format"]:
             formats = ", ".join(f"{k}={v}" for k, v in sorted(stats["by_format"].items()))
             print(f"  By format:         {formats}")
@@ -464,8 +463,6 @@ def main() -> None:
                 f"{f['format']}/{f['language']}" for f in entry["cached_formats"]
             )
             print(f"  Cached as:   {fmts}")
-        if entry.get("summaries"):
-            print(f"  Summaries:   {len(entry['summaries'])}")
         print()
         sys.exit(0)
 

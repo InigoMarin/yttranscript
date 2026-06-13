@@ -164,10 +164,8 @@ def _maybe_cache(
     use_cache: bool,
     output_dir: Path,
     content: str | None = None,
-    summary: str | None = None,
-    summarize_cmd: str | None = None,
 ) -> None:
-    """Save transcript (and optionally summary) to cache DB.
+    """Save transcript to cache DB.
 
     ``content`` is the transcript text.  If not provided directly, the
     function tries to read it from ``output_dir/{video_title}.txt``.
@@ -197,10 +195,6 @@ def _maybe_cache(
             fmt="txt",
             content=content,
         )
-
-    # Cache the summary if one was produced.
-    if summary:
-        cache_db.save_summary(vid, summary, summarize_cmd or "")
 
 
 def process_video(
@@ -301,18 +295,42 @@ def process_video(
             video_duration = video_info["duration"]
 
             # --- Cache lookup: skip download if we already have this transcript ---
-            if use_cache and not stdout_mode and not summarize and fmt == "txt":
+            if use_cache and not stdout_mode:
                 vid = cache_db.extract_video_id(url)
                 if vid:
-                    cached = cache_db.get_cached(vid, fmt, lang, timestamps=timestamps)
+                    cached = cache_db.get_cached(vid, "txt", lang, timestamps=timestamps)
                     if cached:
                         content, cached_info = cached
-                        info("Found in cache — skipping download.")
-                        out = final_output_dir / f"{video_title}.txt"
-                        final_output_dir.mkdir(parents=True, exist_ok=True)
-                        out.write_text(content, encoding="utf-8")
-                        success(f"Saved (cached): {out}")
-                        return (video_title, None, video_info)
+                        if summarize:
+                            info("Found transcript in cache — skipping download.")
+                            success(f"Piping cached transcript to: {summarize_cmd}")
+                            summary = summarize_text(content, summarize_cmd, summarize_prompt or "", summarize_timeout)
+                            if not summary:
+                                raise TranscriptError("Summarization failed.")
+                            final_output_dir.mkdir(parents=True, exist_ok=True)
+                            full_text = format_video_header(video_info) + summary + "\n"
+                            safe_title = sanitize_filename(video_info.get('title', 'transcript'))
+                            if fmt == "pdf":
+                                out = final_output_dir / f"{safe_title}.pdf"
+                                markdown_to_pdf(summary, out, video_info=video_info)
+                            elif fmt == "epub":
+                                out = final_output_dir / f"{safe_title}.epub"
+                                markdown_to_epub(summary, out, video_info=video_info)
+                            elif fmt == "docx":
+                                out = final_output_dir / f"{safe_title}.docx"
+                                markdown_to_docx(summary, out, video_info=video_info)
+                            else:
+                                out = final_output_dir / f"{safe_title}.txt"
+                                out.write_text(full_text, encoding="utf-8")
+                            success(f"Saved: {out}")
+                            return (video_title, summary, video_info)
+                        elif fmt == "txt":
+                            info("Found in cache — skipping download.")
+                            out = final_output_dir / f"{video_title}.txt"
+                            final_output_dir.mkdir(parents=True, exist_ok=True)
+                            out.write_text(content, encoding="utf-8")
+                            success(f"Saved (cached): {out}")
+                            return (video_title, None, video_info)
 
             # Intermediate files go into work_path (absolute paths so subprocesses
             # write there regardless of the process CWD; thread-safe under the web
@@ -360,7 +378,7 @@ def process_video(
                             summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                             output_dir=final_output_dir,
                         )
-                        _maybe_cache(url, video_title, video_info, metadata, lang, "subtitles", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text, summary=summary_md, summarize_cmd=summarize_cmd)
+                        _maybe_cache(url, video_title, video_info, metadata, lang, "subtitles", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text)
                         return (video_title, summary_md, video_info)
 
                 warn("No subtitles available.")
@@ -398,7 +416,7 @@ def process_video(
                     summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                     output_dir=final_output_dir,
                 )
-                _maybe_cache(url, video_title, video_info, metadata, lang, "whisper", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text, summary=summary_md, summarize_cmd=summarize_cmd)
+                _maybe_cache(url, video_title, video_info, metadata, lang, "whisper", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text)
                 return (video_title, summary_md, video_info)
 
         return (video_title, None, video_info)

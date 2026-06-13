@@ -83,15 +83,6 @@ CREATE TABLE IF NOT EXISTS transcripts (
     UNIQUE(video_id, format, language)
 );
 
-CREATE TABLE IF NOT EXISTS summaries (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    video_id      TEXT NOT NULL,
-    summary       TEXT NOT NULL,
-    summarize_cmd TEXT,
-    created_at    TEXT NOT NULL,
-    FOREIGN KEY (video_id) REFERENCES videos(video_id) ON DELETE CASCADE
-);
-
 CREATE INDEX IF NOT EXISTS idx_videos_channel
     ON videos(channel);
 CREATE INDEX IF NOT EXISTS idx_videos_upload
@@ -262,26 +253,6 @@ def save_transcript(
         conn.close()
 
 
-def save_summary(
-    video_id: str,
-    summary: str,
-    summarize_cmd: str,
-    path: Path | None = None,
-) -> None:
-    """Store an AI-generated summary for a video."""
-    init_db(path)
-    conn = get_connection(path)
-    try:
-        conn.execute(
-            """INSERT INTO summaries (video_id, summary, summarize_cmd, created_at)
-               VALUES (?, ?, ?, ?)""",
-            (video_id, summary, summarize_cmd, _now()),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
 # --------------------------------------------------------------------------- #
 #  History / queries
 # --------------------------------------------------------------------------- #
@@ -334,12 +305,6 @@ def get_video_info(video_id: str, path: Path | None = None) -> dict | None:
         result["cached_formats"] = [
             {"format": f["format"], "language": f["language"]} for f in fmts
         ]
-        # Attach summaries.
-        summaries = conn.execute(
-            "SELECT summary, created_at FROM summaries WHERE video_id = ? ORDER BY id DESC",
-            (video_id,),
-        ).fetchall()
-        result["summaries"] = [dict(s) for s in summaries]
         return result
     finally:
         conn.close()
@@ -352,7 +317,6 @@ def get_stats(path: Path | None = None) -> dict:
     try:
         total_videos = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
         total_transcripts = conn.execute("SELECT COUNT(*) FROM transcripts").fetchone()[0]
-        total_summaries = conn.execute("SELECT COUNT(*) FROM summaries").fetchone()[0]
 
         by_format = {
             r["format"]: r["count"]
@@ -376,7 +340,6 @@ def get_stats(path: Path | None = None) -> dict:
         return {
             "total_videos": total_videos,
             "total_transcripts": total_transcripts,
-            "total_summaries": total_summaries,
             "by_format": by_format,
             "by_channel": by_channel,
             "db_size_bytes": db_size,
@@ -390,7 +353,7 @@ def get_stats(path: Path | None = None) -> dict:
 # --------------------------------------------------------------------------- #
 
 def remove_video(video_id: str, path: Path | None = None) -> bool:
-    """Delete a video and all its transcripts/summaries.
+    """Delete a video and all its transcripts.
 
     Returns ``True`` if the video existed, ``False`` otherwise.
     """
@@ -413,7 +376,6 @@ def clear_all(path: Path | None = None) -> int:
     try:
         count = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
         conn.execute("DELETE FROM transcripts")
-        conn.execute("DELETE FROM summaries")
         conn.execute("DELETE FROM videos")
         conn.commit()
         return count
