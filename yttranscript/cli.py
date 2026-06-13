@@ -356,6 +356,7 @@ def transcribe_batch(videos, args, channel_name: str = "", sections_list: list |
     total = len(videos)
     succeeded = 0
     failed = 0
+    skipped = 0
     if sections_list is not None:
         collected_sections = sections_list
     else:
@@ -363,7 +364,8 @@ def transcribe_batch(videos, args, channel_name: str = "", sections_list: list |
 
     for i, (_date_str, video_id, title) in enumerate(videos, 1):
         video_url = f"https://www.youtube.com/watch?v={video_id}"
-        info(f"[{i}/{total}] Transcribing: {title!r}")
+        action = "Checking" if skip_cached else "Transcribing"
+        info(f"[{i}/{total}] {action}: {title!r}")
         try:
             result = process_video(
                 url=video_url,
@@ -390,14 +392,17 @@ def transcribe_batch(videos, args, channel_name: str = "", sections_list: list |
                 use_cache=use_cache,
                 skip_cached=skip_cached,
             )
-            succeeded += 1
-            if args.merge and result and result[1]:
-                vi = result[2] if len(result) > 2 else {}
-                collected_sections.append((
-                    {"title": title, "url": video_url, "duration": vi.get("duration", 0),
-                     "channel": vi.get("channel", channel_name), "upload_date": vi.get("upload_date", _date_str)},
-                    result[1],
-                ))
+            if result is None and skip_cached:
+                skipped += 1
+            else:
+                succeeded += 1
+                if args.merge and result and result[1]:
+                    vi = result[2] if len(result) > 2 else {}
+                    collected_sections.append((
+                        {"title": title, "url": video_url, "duration": vi.get("duration", 0),
+                         "channel": vi.get("channel", channel_name), "upload_date": vi.get("upload_date", _date_str)},
+                        result[1],
+                    ))
         except KeyboardInterrupt:
             warn("Batch interrupted by user.")
             break
@@ -409,10 +414,18 @@ def transcribe_batch(videos, args, channel_name: str = "", sections_list: list |
             error(f"Failed: {msg}")
             failed += 1
 
-    if args.merge and collected_sections and sections_list is None:
-        _do_merge(collected_sections, args, fmt, channel_name)
+    if args.merge and sections_list is None:
+        if collected_sections:
+            _do_merge(collected_sections, args, fmt, channel_name)
+        elif skipped > 0:
+            warn(f"No videos to merge ({skipped} skipped, 0 processed).")
 
-    info(f"Done: {succeeded} transcribed, {failed} failed.")
+    parts = [f"{succeeded} transcribed"]
+    if skipped:
+        parts.append(f"{skipped} skipped")
+    if failed:
+        parts.append(f"{failed} failed")
+    info(f"Done: {', '.join(parts)}.")
 
 
 def main() -> None:
@@ -534,9 +547,12 @@ def main() -> None:
             batch_sections: list[tuple[dict, str]] = []
             transcribe_batch(videos, args, channel_name=channel_name, sections_list=batch_sections)
             all_sections.extend(batch_sections)
-        if args.merge and all_sections:
+        if args.merge:
             fmt = resolve_value(args.format, config, "format")
-            _do_merge(all_sections, args, fmt, args.group)
+            if all_sections:
+                _do_merge(all_sections, args, fmt, args.group)
+            else:
+                warn(f"No videos to merge (all skipped or failed) for group {args.group!r}.")
         return
 
     if args.latest is not None:
