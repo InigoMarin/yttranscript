@@ -37,13 +37,16 @@ def summarize_text(text: str, cmd: str, prompt: str, timeout: int = 300) -> Opti
     debug(f"$ echo '...' | {' '.join(cmd_parts[:4])}...")
     info("Summarizing... (this may take a while)")
 
+    # Restrictive perms on temp files containing the transcript text.
     tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
     tmp_path = tmp.name
     tmp.close()
+    os.chmod(tmp_path, 0o600)
 
     input_tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
     input_tmp.write(full_input)
     input_tmp.close()
+    os.chmod(input_tmp.name, 0o600)
 
     try:
         escaped_cmd = ' '.join(shlex.quote(p) for p in cmd_parts)

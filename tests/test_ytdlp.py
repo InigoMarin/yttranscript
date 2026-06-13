@@ -11,13 +11,11 @@ from yttranscript.util import TranscriptError
 from yttranscript.ytdlp import (
     TIMEOUT_METADATA,
     TIMEOUT_SUBTITLE,
-    detect_video_language,
     ensure_yt_dlp,
     ensure_whisper,
     get_lang_variants,
     get_video_info,
     get_video_metadata,
-    get_video_title,
     list_channel_videos,
     list_subs,
     resolve_channel_videos,
@@ -42,29 +40,6 @@ def _cp(returncode=0, stdout="", stderr=""):
 ])
 def test_get_lang_variants(lang, expected):
     assert get_lang_variants(lang) == expected
-
-
-# --- get_video_title ------------------------------------------------------
-
-def test_get_video_title_success():
-    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "My Cool Video\n")):
-        assert get_video_title("https://youtube.com/watch?v=x") == "My Cool Video"
-
-
-def test_get_video_title_sanitizes():
-    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "a/b:c?d\n")):
-        assert get_video_title("u") == "a-b-c-d"
-
-
-def test_get_video_title_failure_fallback():
-    with patch("yttranscript.ytdlp.run", return_value=_cp(1, "")):
-        assert get_video_title("u") == "transcript"
-
-
-def test_get_video_title_uses_metadata_timeout():
-    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "T\n")) as m:
-        get_video_title("u")
-        assert m.call_args.kwargs.get("timeout") == TIMEOUT_METADATA
 
 
 # --- get_video_info -------------------------------------------------------
@@ -116,33 +91,6 @@ def test_get_video_info_handles_float_duration():
     with patch("yttranscript.ytdlp.run", return_value=_cp(0, raw)):
         info = get_video_info("u")
         assert info["duration"] == 90
-
-
-# --- detect_video_language ------------------------------------------------
-
-def test_detect_language_success():
-    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "en-US\n")):
-        assert detect_video_language("u") == "en"
-
-
-def test_detect_language_simple_code():
-    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "es\n")):
-        assert detect_video_language("u") == "es"
-
-
-def test_detect_language_na_returns_none():
-    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "NA\n")):
-        assert detect_video_language("u") is None
-
-
-def test_detect_language_empty_returns_none():
-    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "\n")):
-        assert detect_video_language("u") is None
-
-
-def test_detect_language_failure_returns_none():
-    with patch("yttranscript.ytdlp.run", return_value=_cp(1, "")):
-        assert detect_video_language("u") is None
 
 
 # --- get_video_metadata ---------------------------------------------------

@@ -213,10 +213,10 @@ class TranscriptHandler(BaseHTTPRequestHandler):
         title = "transcript"
         try:
             if fmt in _BINARY_FORMATS:
-                _DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+                _DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
                 download_id = secrets.token_urlsafe(16)
                 bin_dir = _DOWNLOAD_DIR / download_id
-                bin_dir.mkdir(parents=True, exist_ok=True)
+                bin_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
 
                 try:
                     result = process_video(

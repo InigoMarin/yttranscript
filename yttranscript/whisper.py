@@ -92,6 +92,10 @@ def transcribe_with_whisper(
 
     # Transcribe. Use --output_dir so Whisper writes the VTT into work_path
     # regardless of CWD (also makes it thread-safe under the web server).
+    # Detect GPU availability to avoid a wasted failed attempt on CPU-only hosts.
+    if device == "gpu" and not shutil.which("nvidia-smi"):
+        warn("No NVIDIA GPU detected (nvidia-smi not found). Using CPU.")
+        device = "cpu"
     device_label = "GPU" if device == "gpu" else "CPU"
     info(f"Transcribing with Whisper (model: {model}, {device_label})... this may take a while.")
     whisper_cmd = [

@@ -164,7 +164,6 @@ def test_show_config_hides_hidden_keys(capsys, monkeypatch):
     lines = captured.out.splitlines()
     for line in lines:
         assert not line.strip().startswith("output:")
-        assert not line.strip().startswith("port:")
 
 
 # --- main: argument handling ----------------------------------------------

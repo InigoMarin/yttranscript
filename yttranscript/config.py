@@ -45,7 +45,7 @@ DEFAULTS = {
 }
 
 # Keys not shown in --show-config / config template (CLI-only or runtime-only).
-_CONFIG_HIDDEN = {"output", "port"}
+_CONFIG_HIDDEN = {"output"}
 
 # Example values used when generating the config template (single source of
 # truth: DEFAULTS). Only override where a more illustrative example helps.

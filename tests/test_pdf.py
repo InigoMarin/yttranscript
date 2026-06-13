@@ -300,16 +300,6 @@ def test_merged_docx_creates_valid_file(tmp_path):
     assert out.read_bytes()[:2] == b"PK"
 
 
-@pytest.mark.skipif(not _has_pandoc_and_typst(), reason="pandoc and typst required")
-def test_merged_pdf_backward_compat_wrapper(tmp_path):
-    """markdown_to_merged_pdf still works as a thin wrapper."""
-    from yttranscript.pdf import markdown_to_merged_pdf
-    out = tmp_path / "compat.pdf"
-    markdown_to_merged_pdf(SECTIONS, out, channel_name="Compat")
-    assert out.exists()
-    assert out.read_bytes()[:5] == b"%PDF-"
-
-
 @pytest.mark.skipif(not _has_pandoc(), reason="pandoc required")
 def test_merged_uses_channel_name_in_frontmatter(tmp_path):
     """The channel_name appears as the YAML title in the generated markdown."""

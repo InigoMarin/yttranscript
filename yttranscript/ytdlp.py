@@ -167,16 +167,6 @@ def get_video_metadata(url: str) -> dict:
     }
 
 
-def get_video_title(url: str) -> str:
-    """Get video title and sanitize for filesystem."""
-    result = run(
-        ["yt-dlp", "--print", "%(title)s", url],
-        capture=True, check=False, timeout=TIMEOUT_METADATA,
-    )
-    title = result.stdout.strip() if result.returncode == 0 else "transcript"
-    return sanitize_filename(title)
-
-
 def list_subs(url: str) -> None:
     """List available subtitles for the video."""
     info("Available subtitles:")
@@ -313,21 +303,6 @@ def try_download_subtitle(
     prefix_name = Path(output_prefix).name
     vtt_files = list(search_dir.glob(f"{prefix_name}*.vtt"))
     return len(vtt_files) > 0
-
-
-def detect_video_language(url: str) -> Optional[str]:
-    """Detect video language using yt-dlp. Returns None if detection fails."""
-    result = run(
-        ["yt-dlp", "--print", "%(language)s", url],
-        capture=True, check=False, timeout=TIMEOUT_METADATA,
-    )
-    if result.returncode != 0:
-        return None
-    lang = result.stdout.strip()
-    if not lang or lang == "NA":
-        return None
-    # Normalize: "en-US" → "en"
-    return lang.split("-")[0]
 
 
 def get_lang_variants(lang: str) -> list[str]:

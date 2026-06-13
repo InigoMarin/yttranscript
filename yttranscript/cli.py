@@ -155,8 +155,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--port",
         type=int,
-        default=8080,
-        help="Port for web UI (default: 8080).",
+        default=None,
+        help="Port for web UI (default: 8080, config: port).",
     )
     parser.add_argument(
         "--latest",
@@ -392,6 +392,10 @@ def main() -> None:
         log.set_verbosity(0)
     elif args.verbose:
         log.set_verbosity(2)
+
+    # Resolve port from config early so _validate_args can range-check it.
+    _config = load_config()
+    args.port = resolve_value(args.port, _config, "port")
 
     _validate_args(parser, args)
 

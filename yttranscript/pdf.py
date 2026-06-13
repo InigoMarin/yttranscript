@@ -269,12 +269,3 @@ def markdown_to_merged(
             md_final = parts[0] + toc_typst + sep + parts[1]
 
     _run_pandoc(md_final, output_path, fmt=fmt, metadata=meta, toc=len(sections) > 1)
-
-
-def markdown_to_merged_pdf(
-    sections: list[tuple[dict, str]],
-    output_path: Path,
-    channel_name: Optional[str] = None,
-) -> None:
-    """Backward-compatible wrapper; delegates to :func:`markdown_to_merged`."""
-    markdown_to_merged(sections, output_path, fmt="pdf", channel_name=channel_name)
