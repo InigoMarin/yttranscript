@@ -245,6 +245,10 @@
         <div class="toggle-row">
           <label><input type="checkbox" id="timestamps" /> Timestamps</label>
           <label><input type="checkbox" id="summarize" /> Summarize</label>
+          <select id="summarize-backend" title="Summarization backend">
+            <option value="cmd">local command</option>
+            <option value="api">API</option>
+          </select>
         </div>
       </div>
     </div>
@@ -253,7 +257,7 @@
       <button id="cancel-btn" class="cancel" style="display:none;" onclick="cancelTranscribe()">Cancel</button>
       <span class="hint">or Ctrl+Enter</span>
     </div>
-    <div id="summarize-hint" class="hint warn" style="display:none;">Requires <code>summarize_cmd</code> in config to actually summarize.</div>
+    <div id="summarize-hint" class="hint warn" style="display:none;">Requires <code>summarize_cmd</code> in config for backend <code>cmd</code>, or <code>summarize_api_url</code> + <code>summarize_api_model</code> + the <code>YTTRANSCRIPT_API_KEY</code> env var for backend <code>api</code>.</div>
     <div id="lang-badge" class="hint" style="display:none;">&#127760; Language: <span id="lang-badge-text"></span></div>
     <div id="running-hint" class="hint" style="display:none;">&#9203; Still working — Whisper can take several minutes for long videos.</div>
     <div id="status"></div>
@@ -356,6 +360,7 @@ function saveForm() {
     format: document.getElementById('format').value,
     timestamps: document.getElementById('timestamps').checked,
     summarize: document.getElementById('summarize').checked,
+    summarizeBackend: document.getElementById('summarize-backend').value,
     filename: document.getElementById('filename').value,
   }));
 }
@@ -369,6 +374,7 @@ function restoreForm() {
     if (typeof s.format === 'string') document.getElementById('format').value = s.format;
     if (typeof s.timestamps === 'boolean') document.getElementById('timestamps').checked = s.timestamps;
     if (typeof s.summarize === 'boolean') document.getElementById('summarize').checked = s.summarize;
+    if (typeof s.summarizeBackend === 'string') document.getElementById('summarize-backend').value = s.summarizeBackend;
     if (typeof s.filename === 'string') document.getElementById('filename').value = s.filename;
   } catch (e) {}
 }
@@ -381,6 +387,7 @@ function initFormPersistence() {
   }
   document.getElementById('timestamps').addEventListener('change', function() { saveForm(); updateQuickChips(); });
   document.getElementById('summarize').addEventListener('change', function() { saveForm(); updateSummarizeHint(); updateQuickChips(); });
+  document.getElementById('summarize-backend').addEventListener('change', function() { saveForm(); updateSummarizeHint(); });
 }
 initFormPersistence();
 
@@ -801,12 +808,17 @@ function startTranscribe() {
 
   var fmt = document.getElementById('format').value;
   var summarize = document.getElementById('summarize').checked;
+  var backend = document.getElementById('summarize-backend');
+  var backendVal = backend ? backend.value : '';
   var requestedLang = document.getElementById('lang').value.trim();
   var params = new URLSearchParams({ url: url });
   if (requestedLang) params.set('lang', requestedLang);
   params.set('format', fmt);
   if (document.getElementById('timestamps').checked) params.set('timestamps', '1');
-  if (summarize) params.set('summarize', '1');
+  if (summarize) {
+    params.set('summarize', '1');
+    if (backendVal) params.set('summarize_backend', backendVal);
+  }
 
   _progressEvents = 0;
   document.getElementById('progress-fill').style.width = '0%';

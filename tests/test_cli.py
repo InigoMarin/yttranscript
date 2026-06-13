@@ -43,6 +43,10 @@ def test_parser_all_flags():
         "--summarize",
         "--summarize-cmd", "llama-cli",
         "--summarize-prompt", "Summarize",
+        "--summarize-backend", "api",
+        "--summarize-api-url", "https://api.openai.com/v1/chat/completions",
+        "--summarize-api-model", "gpt-4o-mini",
+        "--summarize-api-key-env", "MY_KEY",
         "--list-subs",
         "--output", "mytitle",
         "--quiet",
@@ -63,6 +67,10 @@ def test_parser_all_flags():
     assert args.summarize is True
     assert args.summarize_cmd == "llama-cli"
     assert args.summarize_prompt == "Summarize"
+    assert args.summarize_backend == "api"
+    assert args.summarize_api_url == "https://api.openai.com/v1/chat/completions"
+    assert args.summarize_api_model == "gpt-4o-mini"
+    assert args.summarize_api_key_env == "MY_KEY"
     assert args.list_subs is True
     assert args.output == "mytitle"
     assert args.quiet is True
@@ -74,6 +82,58 @@ def test_parser_verbose():
     parser = build_parser()
     args = parser.parse_args(["-v", "URL"])
     assert args.verbose is True
+
+
+def test_parser_summarize_backend_choices():
+    parser = build_parser()
+    # invalid backend rejected
+    with pytest.raises(SystemExit):
+        parser.parse_args(["URL", "--summarize-backend", "bogus"])
+    args = parser.parse_args(["URL", "--summarize-backend", "api"])
+    assert args.summarize_backend == "api"
+
+
+# --- _resolve_options: summarize backend + API key -----------------------
+
+def test_resolve_options_reads_api_key_from_env(monkeypatch):
+    from yttranscript.cli import _resolve_options
+    parser = build_parser()
+    args = parser.parse_args([
+        "URL", "--summarize-backend", "api",
+        "--summarize-api-key-env", "MY_TEST_KEY",
+    ])
+    monkeypatch.setenv("MY_TEST_KEY", "secret-123")
+    opts = _resolve_options(args, config={})
+    assert opts["summarize_backend"] == "api"
+    assert opts["summarize_api_key"] == "secret-123"
+    # URL/model fall back to defaults (None) when unset
+    assert opts["summarize_api_url"] is None
+
+
+def test_resolve_options_missing_env_key_yields_none(monkeypatch):
+    from yttranscript.cli import _resolve_options
+    parser = build_parser()
+    args = parser.parse_args(["URL"])
+    monkeypatch.delenv("YTTRANSCRIPT_API_KEY", raising=False)
+    opts = _resolve_options(args, config={})
+    assert opts["summarize_backend"] == "cmd"
+    assert opts["summarize_api_key"] is None
+
+
+def test_resolve_options_backend_from_config(monkeypatch):
+    from yttranscript.cli import _resolve_options
+    parser = build_parser()
+    args = parser.parse_args(["URL"])  # no --summarize-backend
+    monkeypatch.setenv("YTTRANSCRIPT_API_KEY", "k")
+    opts = _resolve_options(args, config={
+        "summarize_backend": "api",
+        "summarize_api_url": "https://x/v1/chat/completions",
+        "summarize_api_model": "gpt-4o-mini",
+    })
+    assert opts["summarize_backend"] == "api"
+    assert opts["summarize_api_url"] == "https://x/v1/chat/completions"
+    assert opts["summarize_api_model"] == "gpt-4o-mini"
+    assert opts["summarize_api_key"] == "k"
 
 
 def test_parser_serve_and_port():
@@ -791,3 +851,86 @@ def test_resolve_options_skip_cached():
     opts = _resolve_options(args, {})
     assert opts["use_cache"] is True
     assert opts["skip_cached"] is True
+
+
+# --- --summarize-api-list-models -----------------------------------------
+
+def test_parser_list_models_flag():
+    parser = build_parser()
+    args = parser.parse_args(["--summarize-api-list-models"])
+    assert args.summarize_api_list_models is True
+    # Works without a positional URL
+    assert args.url is None
+
+
+def test_list_models_no_url_configured_exits_1(monkeypatch, capsys):
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
+    monkeypatch.setattr("sys.argv", ["yttranscript", "--summarize-api-list-models"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "summarize_api_url" in err.lower()
+
+
+def test_list_models_no_api_key_exits_1(monkeypatch, capsys):
+    config = {"summarize_api_url": "https://api.openai.com/v1/chat/completions"}
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: config)
+    monkeypatch.delenv("YTTRANSCRIPT_API_KEY", raising=False)
+    monkeypatch.setattr("sys.argv", ["yttranscript", "--summarize-api-list-models"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "YTTRANSCRIPT_API_KEY" in err
+
+
+def test_list_models_success_prints_table_and_exits_0(monkeypatch, capsys):
+    config = {"summarize_api_url": "https://api.openai.com/v1/chat/completions"}
+    fake_models = [
+        {"id": "gpt-4o", "owned_by": "openai", "created": 1715367600},
+        {"id": "gpt-4o-mini", "owned_by": "openai", "created": 1721260800},
+    ]
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: config)
+    monkeypatch.setattr("yttranscript.cli.os.environ.get", lambda k: "k" if k == "YTTRANSCRIPT_API_KEY" else None)
+    monkeypatch.setattr("yttranscript.summarize.list_models", lambda url, key, timeout=300: fake_models)
+    monkeypatch.setattr("sys.argv", ["yttranscript", "--summarize-api-list-models"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "Endpoint:" in out
+    assert "https://api.openai.com/v1/chat/completions" in out
+    assert "gpt-4o" in out
+    assert "gpt-4o-mini" in out
+    assert "2 model(s)" in out
+
+
+def test_list_models_api_failure_exits_1(monkeypatch, capsys):
+    config = {"summarize_api_url": "https://api.openai.com/v1/chat/completions"}
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: config)
+    monkeypatch.setattr("yttranscript.cli.os.environ.get", lambda k: "k" if k == "YTTRANSCRIPT_API_KEY" else None)
+    monkeypatch.setattr("yttranscript.summarize.list_models", lambda url, key, timeout=300: None)
+    monkeypatch.setattr("sys.argv", ["yttranscript", "--summarize-api-list-models"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 1
+
+
+def test_print_models_table_empty_warns(capsys):
+    from yttranscript.cli import _print_models_table
+    _print_models_table([])
+    out = capsys.readouterr().out
+    assert "No models" in out
+
+
+def test_print_models_table_missing_created_shows_question(capsys):
+    from yttranscript.cli import _print_models_table
+    _print_models_table([{"id": "weird", "owned_by": "?", "created": None}])
+    out = capsys.readouterr().out
+    assert "weird" in out
+    assert "?" in out

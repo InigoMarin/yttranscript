@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-06-13
+
+### Added
+- API summarization backend (`summarize_backend = "api"`): POSTs the transcript to an OpenAI-compatible chat completions endpoint via stdlib `urllib` — works with OpenAI, OpenRouter, LM Studio, vLLM, Ollama HTTP, Groq, z.ai, etc. No extra dependencies
+- CLI flags: `--summarize-backend`, `--summarize-api-url`, `--summarize-api-model`, `--summarize-api-key-env`
+- `--summarize-api-list-models` command: lists models accessible from the configured API endpoint (derives `GET /models` from the chat URL) and exits
+- API key read from an environment variable (default `YTTRANSCRIPT_API_KEY`); never written to disk/config
+- Backend selector (`cmd`/`api`) in the web UI
+
 ### Changed
 - Extract duplicated helpers: `_resolve_options()`, `_parse_upload_date()`, `_merge_output_path()`
 - Introduce `VideoInfo` dataclass to replace ad-hoc metadata dicts in `process_video()`

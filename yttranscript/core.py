@@ -22,7 +22,7 @@ from .vtt import (
     _vtt_to_plain,
 )
 from .whisper import transcribe_with_whisper
-from .summarize import summarize_text
+from .summarize import summarize as do_summarize
 from .pdf import markdown_to_pdf, markdown_to_epub, markdown_to_docx
 from .ytdlp import (
     ensure_yt_dlp,
@@ -64,6 +64,10 @@ def _render_output(
     keep_vtt: bool,
     output_dir: Path,
     no_save: bool = False,
+    summarize_backend: str = "cmd",
+    summarize_api_url: Optional[str] = None,
+    summarize_api_model: Optional[str] = None,
+    summarize_api_key: Optional[str] = None,
 ) -> Optional[tuple[Path, Optional[str]]]:
     """Render VTT to final output: summarize, stdout, or file in output_dir.
 
@@ -71,13 +75,34 @@ def _render_output(
     summary_markdown is populated only when summarize=True and a file is saved.
     """
     if summarize:
-        if not summarize_cmd:
-            raise TranscriptError("--summarize requires summarize_cmd in config or --summarize-cmd flag.")
+        if summarize_backend == "api":
+            if not summarize_api_url:
+                raise TranscriptError(
+                    "--summarize with backend 'api' requires summarize_api_url in config "
+                    "or --summarize-api-url flag."
+                )
+            target = f"API: {summarize_api_url} (model: {summarize_api_model})"
+        else:
+            if not summarize_cmd:
+                raise TranscriptError(
+                    "--summarize with backend 'cmd' requires summarize_cmd in config "
+                    "or --summarize-cmd flag."
+                )
+            target = f"command: {summarize_cmd}"
         info("Extracting text for summarization...")
         text = extract_vtt_plain_text(vtt_path)
         vtt_path.unlink(missing_ok=True)
-        success(f"Piping transcript to: {summarize_cmd}")
-        summary = summarize_text(text, summarize_cmd, summarize_prompt or "", summarize_timeout)
+        success(f"Sending transcript to {target}")
+        summary = do_summarize(
+            text,
+            backend=summarize_backend,
+            cmd=summarize_cmd,
+            prompt=summarize_prompt or "",
+            timeout=summarize_timeout,
+            api_url=summarize_api_url,
+            api_model=summarize_api_model,
+            api_key=summarize_api_key,
+        )
         if not summary:
             raise TranscriptError("Summarization failed.")
         if no_save:
@@ -244,6 +269,10 @@ def process_video(
     use_cache: bool = True,
     skip_cached: bool = False,
     no_save: bool = False,
+    summarize_backend: str = "cmd",
+    summarize_api_url: Optional[str] = None,
+    summarize_api_model: Optional[str] = None,
+    summarize_api_key: Optional[str] = None,
 ) -> Optional[tuple[str, Optional[str], dict]]:
     """Main processing pipeline. Returns (video_title, summary_markdown, video_info) or None.
 
@@ -330,8 +359,21 @@ def process_video(
                         content, cached_info = cached
                         if summarize:
                             info("Found transcript in cache — skipping download.")
-                            success(f"Piping cached transcript to: {summarize_cmd}")
-                            summary = summarize_text(content, summarize_cmd, summarize_prompt or "", summarize_timeout)
+                            if summarize_backend == "api":
+                                target = f"API: {summarize_api_url} (model: {summarize_api_model})"
+                            else:
+                                target = f"command: {summarize_cmd}"
+                            success(f"Sending cached transcript to {target}")
+                            summary = do_summarize(
+                                content,
+                                backend=summarize_backend,
+                                cmd=summarize_cmd,
+                                prompt=summarize_prompt or "",
+                                timeout=summarize_timeout,
+                                api_url=summarize_api_url,
+                                api_model=summarize_api_model,
+                                api_key=summarize_api_key,
+                            )
                             if not summary:
                                 raise TranscriptError("Summarization failed.")
                             final_output_dir.mkdir(parents=True, exist_ok=True)
@@ -404,6 +446,10 @@ def process_video(
                             fmt, stdout_mode, timestamps, chunk_size,
                             summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                             output_dir=final_output_dir, no_save=no_save,
+                            summarize_backend=summarize_backend,
+                            summarize_api_url=summarize_api_url,
+                            summarize_api_model=summarize_api_model,
+                            summarize_api_key=summarize_api_key,
                         )
                         _maybe_cache(url, video_title, video_info.to_dict(), metadata, lang, "subtitles", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text)
                         return (video_title, summary_md, video_info.to_dict())
@@ -442,6 +488,10 @@ def process_video(
                     fmt, stdout_mode, timestamps, chunk_size,
                     summarize, summarize_cmd, summarize_prompt, summarize_timeout, keep_vtt,
                     output_dir=final_output_dir, no_save=no_save,
+                    summarize_backend=summarize_backend,
+                    summarize_api_url=summarize_api_url,
+                    summarize_api_model=summarize_api_model,
+                    summarize_api_key=summarize_api_key,
                 )
                 _maybe_cache(url, video_title, video_info.to_dict(), metadata, lang, "whisper", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text)
                 return (video_title, summary_md, video_info.to_dict())

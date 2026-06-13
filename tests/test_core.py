@@ -296,6 +296,39 @@ def test_render_summarize_without_cmd_exits(tmp_path):
         )
 
 
+def test_render_summarize_api_without_url_exits(tmp_path):
+    vtt = tmp_path / "v.vtt"
+    vtt.write_text("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHi\n", encoding="utf-8")
+    with pytest.raises(TranscriptError):
+        _render_output(
+            vtt_path=vtt, video_info={"title": "v", "url": "U", "duration": 1, "whisper": False},
+            fmt="txt", stdout_mode=False, timestamps=False, chunk_size=30,
+            summarize=True, summarize_cmd=None, summarize_prompt=None,
+            summarize_timeout=300, keep_vtt=False, output_dir=tmp_path,
+            summarize_backend="api", summarize_api_url=None,
+            summarize_api_model="m", summarize_api_key="k",
+        )
+
+
+def test_render_summarize_api_success(tmp_path):
+    vtt = tmp_path / "v.vtt"
+    vtt.write_text("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHi\n", encoding="utf-8")
+    with patch("yttranscript.core.do_summarize", return_value="**API summary**") as m_sum:
+        out, summary = _render_output(
+            vtt_path=vtt, video_info={"title": "v", "url": "U", "duration": 1, "whisper": False},
+            fmt="txt", stdout_mode=False, timestamps=False, chunk_size=30,
+            summarize=True, summarize_cmd=None, summarize_prompt="P",
+            summarize_timeout=300, keep_vtt=False, output_dir=tmp_path,
+            summarize_backend="api", summarize_api_url="https://x/v1/chat/completions",
+            summarize_api_model="gpt-4o-mini", summarize_api_key="k",
+        )
+    m_sum.assert_called_once()
+    assert m_sum.call_args.kwargs["backend"] == "api"
+    assert m_sum.call_args.kwargs["api_url"] == "https://x/v1/chat/completions"
+    assert summary == "**API summary**"
+    assert out is not None and out.read_text(encoding="utf-8").endswith("**API summary**\n")
+
+
 # ---------------------------------------------------------------------------
 # process_video: integration tests (mocked pipeline)
 # ---------------------------------------------------------------------------

@@ -1,17 +1,26 @@
-"""Summarization via external command piping.
+"""Summarization via external command piping or HTTP API.
 
-Currently tailored to llama.cpp's `llama-cli` output format. Other tools may
-work but the response parsing is shaped around llama-cli's banner/prompt/stats
-structure.
+Two backends, selected by ``backend``:
+
+- ``cmd``: pipe transcript to an external command (default). Currently tailored
+  to llama.cpp's ``llama-cli`` output format. Other tools may work but the
+  response parsing is shaped around llama-cli's banner/prompt/stats structure.
+- ``api``: POST transcript to an OpenAI-compatible chat completions endpoint
+  (OpenAI, OpenRouter, LM Studio server, vLLM, Ollama HTTP, Groq, Together,
+  ...). Uses stdlib ``urllib`` only — no extra dependencies.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
+import socket
 import subprocess
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Optional
 
@@ -112,3 +121,191 @@ def summarize_text(text: str, cmd: str, prompt: str, timeout: int = 300) -> Opti
     finally:
         os.unlink(tmp_path)
         os.unlink(input_tmp.name)
+
+
+def summarize_text_api(
+    text: str,
+    api_url: str,
+    api_model: str,
+    api_key: str,
+    prompt: str,
+    timeout: int = 300,
+) -> Optional[str]:
+    """Send text to an OpenAI-compatible chat completions endpoint.
+
+    Works with any provider implementing ``POST {api_url}`` returning the
+    standard ``choices[0].message.content`` structure (OpenAI, OpenRouter,
+    LM Studio server, vLLM, Ollama HTTP, Groq, Together, ...).
+
+    Returns the cleaned summary text on success, or None on failure.
+    """
+    if not api_url or not api_url.strip():
+        error("Summarize API URL is empty.")
+        return None
+    if not api_key:
+        error("Summarize API key is empty (env var not set).")
+        return None
+    if not api_model:
+        error("Summarize API model is empty.")
+        return None
+
+    full_prompt = f"{prompt} {text}" if prompt else text
+    payload = {
+        "model": api_model,
+        "messages": [{"role": "user", "content": full_prompt}],
+        "temperature": 0.3,
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        api_url,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+
+    debug(f"POST {api_url} (model={api_model}, {len(text)} chars)")
+    info("Summarizing via API... (this may take a while)")
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8", errors="replace").strip()[:300]
+        except Exception:
+            pass
+        suffix = f" — {detail}" if detail else ""
+        error(f"API returned HTTP {e.code}: {e.reason}{suffix}")
+        return None
+    except socket.timeout:
+        error(f"API request timed out after {timeout} seconds.")
+        return None
+    except urllib.error.URLError as e:
+        error(f"API request failed: {e.reason}")
+        return None
+
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        error("API returned malformed JSON.")
+        return None
+
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        error("Unexpected API response structure.")
+        debug(f"Response: {raw[:300]!r}")
+        return None
+
+    clean = (content or "").strip()
+    return clean if clean else None
+
+
+def summarize(
+    text: str,
+    *,
+    backend: str,
+    cmd: Optional[str] = None,
+    prompt: str = "",
+    timeout: int = 300,
+    api_url: Optional[str] = None,
+    api_model: Optional[str] = None,
+    api_key: Optional[str] = None,
+) -> Optional[str]:
+    """Dispatch summarization to the selected backend.
+
+    ``backend``: ``"cmd"`` (pipe to external command) or ``"api"``
+    (OpenAI-compatible HTTP endpoint).
+    """
+    if backend == "api":
+        return summarize_text_api(
+            text, api_url or "", api_model or "", api_key or "", prompt, timeout
+        )
+    return summarize_text(text, cmd or "", prompt, timeout)
+
+
+def derive_models_url(api_url: str) -> str:
+    """Derive the ``GET /models`` endpoint from a chat completions URL.
+
+    Standard OpenAI-compatible layout::
+
+        {base}/chat/completions  ->  {base}/models
+
+    Falls back to appending ``/models`` when the URL does not end with the
+    standard suffix (so a base URL like ``https://api.openai.com/v1`` also
+    works).
+    """
+    suffix = "/chat/completions"
+    if api_url.endswith(suffix):
+        return api_url[: -len(suffix)] + "/models"
+    return api_url.rstrip("/") + "/models"
+
+
+def list_models(
+    api_url: str,
+    api_key: str,
+    timeout: int = 300,
+) -> Optional[list[dict]]:
+    """Fetch the list of accessible models from an OpenAI-compatible API.
+
+    Returns a list of ``{"id", "owned_by", "created"}`` dicts sorted by id,
+    or None on failure.
+    """
+    if not api_url or not api_url.strip():
+        error("Summarize API URL is empty.")
+        return None
+    if not api_key:
+        error("Summarize API key is empty (env var not set).")
+        return None
+
+    models_url = derive_models_url(api_url)
+    req = urllib.request.Request(
+        models_url,
+        headers={"Authorization": f"Bearer {api_key}"},
+        method="GET",
+    )
+
+    debug(f"GET {models_url}")
+    info("Fetching accessible models...")
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8", errors="replace").strip()[:300]
+        except Exception:
+            pass
+        suffix_detail = f" — {detail}" if detail else ""
+        error(f"API returned HTTP {e.code}: {e.reason}{suffix_detail}")
+        return None
+    except socket.timeout:
+        error(f"API request timed out after {timeout} seconds.")
+        return None
+    except urllib.error.URLError as e:
+        error(f"API request failed: {e.reason}")
+        return None
+
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        error("API returned malformed JSON.")
+        return None
+
+    entries = data.get("data", []) if isinstance(data, dict) else []
+    models = [
+        {
+            "id": m.get("id", "?"),
+            "owned_by": m.get("owned_by", "?"),
+            "created": m.get("created"),
+        }
+        for m in entries
+        if isinstance(m, dict)
+    ]
+    models.sort(key=lambda m: str(m["id"]))
+    return models

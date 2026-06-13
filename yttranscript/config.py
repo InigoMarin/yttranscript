@@ -35,6 +35,10 @@ DEFAULTS = {
     "summarize_cmd": None,
     "summarize_prompt": "Summarize this video transcript in bullet points",
     "summarize_timeout": 300,
+    "summarize_backend": "cmd",
+    "summarize_api_url": None,
+    "summarize_api_model": None,
+    "summarize_api_key_env": "YTTRANSCRIPT_API_KEY",
     "fallback_lang": "en",
     "whisper_model": "base",
     "whisper_device": "gpu",
@@ -53,6 +57,10 @@ _CONFIG_EXAMPLES = {
     "lang": "es",
     "summarize_cmd": "llama-cli -m ~/models/Llama-3.1-8B-Instruct-Q4_K_M.gguf -ngl 99 -fa 1 -ub 1024 -b 1024 --single-turn",
     "summarize_prompt": "Summarize this video in bullet points. Format for readability using markdown.",
+    "summarize_backend": "cmd",
+    "summarize_api_url": "https://api.openai.com/v1/chat/completions",
+    "summarize_api_model": "gpt-4o-mini",
+    "summarize_api_key_env": "YTTRANSCRIPT_API_KEY",
     "whisper_dir": "/home/user/.cache/whisper",
 }
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -148,6 +149,39 @@ def build_parser() -> argparse.ArgumentParser:
         help="Prompt prepended to transcript before piping (default: config summarize_prompt).",
     )
     parser.add_argument(
+        "--summarize-backend",
+        choices=["cmd", "api"],
+        default=None,
+        help="Summarization backend: 'cmd' pipes to an external command, "
+             "'api' POSTs to an OpenAI-compatible endpoint (default: config summarize_backend, "
+             "or 'cmd').",
+    )
+    parser.add_argument(
+        "--summarize-api-url",
+        default=None,
+        help="OpenAI-compatible chat completions URL for backend 'api' "
+             '(e.g. "https://api.openai.com/v1/chat/completions"). '
+             "Default: config summarize_api_url.",
+    )
+    parser.add_argument(
+        "--summarize-api-model",
+        default=None,
+        help="Model name for backend 'api' (e.g. gpt-4o-mini). "
+             "Default: config summarize_api_model.",
+    )
+    parser.add_argument(
+        "--summarize-api-key-env",
+        default=None,
+        help="Name of the environment variable holding the API key for backend 'api' "
+             "(default: config summarize_api_key_env, or YTTRANSCRIPT_API_KEY).",
+    )
+    parser.add_argument(
+        "--summarize-api-list-models",
+        action="store_true",
+        help="List models accessible from the configured summarize API endpoint and exit. "
+             "Derives GET /models from summarize_api_url. No URL required.",
+    )
+    parser.add_argument(
         "--serve",
         action="store_true",
         help="Start local web UI (http://localhost:PORT).",
@@ -265,6 +299,58 @@ def show_config() -> None:
     sys.exit(0)
 
 
+def _format_created(ts) -> str:
+    """Render a Unix timestamp as YYYY-MM-DD, or '?' if missing/invalid."""
+    if not ts:
+        return "?"
+    try:
+        from datetime import datetime
+        return datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d")
+    except (ValueError, OSError, OverflowError):
+        return "?"
+
+
+def _print_models_table(models: list[dict]) -> None:
+    """Render the models list as a three-column table (id, owner, created)."""
+    if not models:
+        warn("No models returned by the API.")
+        return
+    id_w = max(len(m["id"]) for m in models)
+    owner_w = max(len(str(m["owned_by"])) for m in models)
+    id_w = max(id_w, len("ID"))
+    owner_w = max(owner_w, len("Owner"))
+    print(f"\n  {Colors.BOLD}{'ID':<{id_w}}  {'Owner':<{owner_w}}  Created{Colors.RESET}\n")
+    for m in models:
+        created = _format_created(m["created"])
+        print(f"  {str(m['id']):<{id_w}}  {str(m['owned_by']):<{owner_w}}  {created}")
+    print(f"\n  {len(models)} model(s).\n")
+
+
+def _list_models_and_exit(args, config: dict) -> None:
+    """Resolve API config, fetch accessible models, print table, and exit."""
+    from .summarize import list_models
+
+    api_url = resolve_value(args.summarize_api_url, config, "summarize_api_url")
+    api_key_env = resolve_value(args.summarize_api_key_env, config, "summarize_api_key_env")
+    timeout = resolve_value(None, config, "summarize_timeout")
+
+    if not api_url:
+        error("No summarize API URL configured. Set summarize_api_url in config or pass --summarize-api-url.")
+        sys.exit(1)
+    api_key = os.environ.get(api_key_env) if api_key_env else None
+    if not api_key:
+        env_name = api_key_env or "the configured env var"
+        error(f"API key not found in env var {env_name!r}. Set it and retry.")
+        sys.exit(1)
+
+    models = list_models(api_url, api_key, timeout=timeout)
+    if models is None:
+        sys.exit(1)
+    print(f"\n  {Colors.BOLD}Endpoint:{Colors.RESET} {api_url}")
+    _print_models_table(models)
+    sys.exit(0)
+
+
 def _validate_args(parser: argparse.ArgumentParser, args) -> None:
     """Validate interdependent / range-checked arguments."""
     if not (1 <= args.port <= 65535):
@@ -289,6 +375,11 @@ def _resolve_options(args, config: dict) -> dict:
     """Resolve all CLI options from args + config in one pass."""
     cache_enabled = config.get("cache_enabled", DEFAULTS["cache_enabled"])
     use_cache = cache_enabled and not args.no_cache
+    summarize_backend = resolve_value(args.summarize_backend, config, "summarize_backend")
+    summarize_api_url = resolve_value(args.summarize_api_url, config, "summarize_api_url")
+    summarize_api_model = resolve_value(args.summarize_api_model, config, "summarize_api_model")
+    api_key_env = resolve_value(args.summarize_api_key_env, config, "summarize_api_key_env")
+    summarize_api_key = os.environ.get(api_key_env) if api_key_env else None
     return {
         "lang": resolve_value(args.lang, config, "lang"),
         "fmt": resolve_value(args.format, config, "format"),
@@ -297,6 +388,10 @@ def _resolve_options(args, config: dict) -> dict:
         "summarize_cmd": resolve_value(args.summarize_cmd, config, "summarize_cmd"),
         "summarize_prompt": resolve_value(args.summarize_prompt, config, "summarize_prompt"),
         "summarize_timeout": resolve_value(None, config, "summarize_timeout"),
+        "summarize_backend": summarize_backend,
+        "summarize_api_url": summarize_api_url,
+        "summarize_api_model": summarize_api_model,
+        "summarize_api_key": summarize_api_key,
         "fallback_lang": resolve_value(None, config, "fallback_lang"),
         "whisper_model": resolve_value(args.whisper_model, config, "whisper_model"),
         "whisper_dir": resolve_value(args.whisper_dir, config, "whisper_dir"),
@@ -338,6 +433,10 @@ def transcribe_batch(videos, args, channel_name: str = "", sections_list: list |
     summarize_cmd = opts["summarize_cmd"]
     summarize_prompt = opts["summarize_prompt"]
     summarize_timeout = opts["summarize_timeout"]
+    summarize_backend = opts["summarize_backend"]
+    summarize_api_url = opts["summarize_api_url"]
+    summarize_api_model = opts["summarize_api_model"]
+    summarize_api_key = opts["summarize_api_key"]
     fallback_lang = opts["fallback_lang"]
     whisper_model = opts["whisper_model"]
     whisper_dir = opts["whisper_dir"]
@@ -386,6 +485,10 @@ def transcribe_batch(videos, args, channel_name: str = "", sections_list: list |
                 summarize_cmd=summarize_cmd,
                 summarize_prompt=summarize_prompt,
                 summarize_timeout=summarize_timeout,
+                summarize_backend=summarize_backend,
+                summarize_api_url=summarize_api_url,
+                summarize_api_model=summarize_api_model,
+                summarize_api_key=summarize_api_key,
                 fallback_lang=fallback_lang,
                 work_dir=args.work_dir,
                 output_dir=args.output_dir,
@@ -522,6 +625,9 @@ def main() -> None:
         print()
         sys.exit(0)
 
+    if args.summarize_api_list_models:
+        _list_models_and_exit(args, _config)
+
     if args.serve:
         run_server(args.port)
         return
@@ -588,6 +694,10 @@ def main() -> None:
             summarize_cmd=opts["summarize_cmd"],
             summarize_prompt=opts["summarize_prompt"],
             summarize_timeout=opts["summarize_timeout"],
+            summarize_backend=opts["summarize_backend"],
+            summarize_api_url=opts["summarize_api_url"],
+            summarize_api_model=opts["summarize_api_model"],
+            summarize_api_key=opts["summarize_api_key"],
             fallback_lang=opts["fallback_lang"],
             work_dir=args.work_dir,
             output_dir=args.output_dir,

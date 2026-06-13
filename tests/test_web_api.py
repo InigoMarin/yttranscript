@@ -262,6 +262,46 @@ def test_api_passes_config_values():
     assert received["fallback_lang"] == "es"
 
 
+def test_api_passes_summarize_backend_from_query():
+    received = {}
+
+    def fake_pv(**kwargs):
+        received.update(kwargs)
+        return ("T", None)
+
+    with patch("yttranscript.web.process_video", side_effect=fake_pv), \
+         patch("yttranscript.web.load_config", return_value={}), \
+         patch("yttranscript.web.os.environ.get", return_value="envkey"):
+        with _Harness() as h:
+            h.stream(
+                "/api?url=https://youtube.com/watch?v=x&summarize=1&summarize_backend=api",
+                headers={"Origin": f"http://localhost:{h.port}"})
+
+    assert received["summarize"] is True
+    assert received["summarize_backend"] == "api"
+    assert received["summarize_api_key"] == "envkey"
+
+
+def test_api_summarize_backend_falls_back_to_config():
+    received = {}
+
+    def fake_pv(**kwargs):
+        received.update(kwargs)
+        return ("T", None)
+
+    config = {"summarize_backend": "api"}
+    with patch("yttranscript.web.process_video", side_effect=fake_pv), \
+         patch("yttranscript.web.load_config", return_value=config), \
+         patch("yttranscript.web.os.environ.get", return_value=None):
+        with _Harness() as h:
+            h.stream(
+                "/api?url=https://youtube.com/watch?v=x&summarize=1",
+                headers={"Origin": f"http://localhost:{h.port}"})
+
+    assert received["summarize_backend"] == "api"
+    assert received["summarize_api_key"] is None
+
+
 # --- title fallback -------------------------------------------------------
 
 def test_title_fallback_to_transcript():

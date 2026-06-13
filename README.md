@@ -10,7 +10,7 @@ Export to **txt**, **VTT**, **SRT**, **JSON** (chunked for RAG), **PDF**, **EPUB
 - Auto-detect video language; tries manual → auto-generated subtitles → Whisper
 - Channel groups: define named channel collections in config, transcribe all at once (`--group`)
 - Batch mode: transcribe the latest N videos from a channel (`--latest`)
-- AI summarization via external command (llama-cli, Ollama, etc.)
+- AI summarization via external local command (llama-cli, Ollama, etc.) or OpenAI-compatible HTTP API
 - `--merge` combines all summaries from a batch into a single PDF/EPUB/DOCX
 - JSON output with configurable chunk size for RAG / vector DB ingestion
 - Local web UI with real-time SSE progress streaming
@@ -188,9 +188,14 @@ yttranscript --cache-clear
 | `--keep-vtt` | Keep VTT file after text conversion |
 | `--keep-audio` | Keep audio file after Whisper transcription |
 | `--show-config` | Show current configuration and exit |
-| `--summarize` | Pipe transcript to external AI command for summarization |
-| `--summarize-cmd` | Command to pipe transcript to (config: `summarize_cmd`) |
+| `--summarize` | Summarize the transcript (uses backend `summarize_backend`: `cmd` or `api`) |
+| `--summarize-backend` | Summarization backend: `cmd` (pipe to command) or `api` (HTTP endpoint). Default: `cmd` |
+| `--summarize-cmd` | Command to pipe transcript to for backend `cmd` (config: `summarize_cmd`) |
 | `--summarize-prompt` | Prompt prepended to transcript (config: `summarize_prompt`) |
+| `--summarize-api-url` | OpenAI-compatible chat completions URL for backend `api` (config: `summarize_api_url`) |
+| `--summarize-api-model` | Model name for backend `api` (config: `summarize_api_model`) |
+| `--summarize-api-key-env` | Env var name holding the API key (default: `YTTRANSCRIPT_API_KEY`) |
+| `--summarize-api-list-models` | List models accessible from the configured API endpoint and exit |
 | `--serve` | Start local web UI at `http://localhost:PORT` |
 | `--port` | Port for web UI (default: 8080) |
 | `--latest [N]` | List latest N videos from a channel (default: 10) |
@@ -236,6 +241,10 @@ Directory spec: `$XDG_CONFIG_HOME/yttranscript/config.toml` (defaults to
 # summarize_cmd = "llama-cli -m ~/models/Llama-3.1-8B-Instruct-Q4_K_M.gguf -ngl 99 -fa 1 -ub 1024 -b 1024 --single-turn"
 # summarize_prompt = "Summarize this video in bullet points. Format for readability using markdown."
 # summarize_timeout = 300
+# summarize_backend = "cmd"
+# summarize_api_url = "https://api.openai.com/v1/chat/completions"
+# summarize_api_model = "gpt-4o-mini"
+# summarize_api_key_env = "YTTRANSCRIPT_API_KEY"
 # fallback_lang = "en"
 # whisper_model = "base"
 # whisper_device = "gpu"
@@ -302,8 +311,16 @@ This displays all config values plus any channel groups you have defined.
 
 ## Summarization with AI
 
+yttranscript supports two summarization backends, selected via `summarize_backend`:
+
+- **`cmd`** (default): pipes the transcript to an external local command (e.g. `llama-cli`, Ollama). No network, fully private, but consumes local GPU/CPU/RAM.
+- **`api`**: POSTs the transcript to an OpenAI-compatible chat completions endpoint (OpenAI, OpenRouter, LM Studio server, vLLM, Ollama HTTP, Groq, Together, ...). Light on local resources, but sends the transcript over the network and requires an API key.
+
+### Backend `cmd` (local command)
+
 ```bash
 # Configure once in ~/.config/yttranscript/config.toml:
+#   summarize_backend = "cmd"
 #   summarize_cmd = "llama-cli -m ~/models/Llama-3.1-8B-Instruct-Q4_K_M.gguf -ngl 99 -fa 1 -ub 1024 -b 1024 --single-turn"
 #   summarize_prompt = "Summarize this video in bullet points. Format for readability using markdown."
 
@@ -317,6 +334,48 @@ yttranscript URL --summarize \
 ```
 
 How it works: yttranscript downloads the transcript, extracts plain text, and sends it to `summarize_cmd` with `summarize_prompt` prepended. Output is captured via a pseudo-terminal (`script(1)`) and cleaned (banner, stats, thinking blocks removed). The timeout is configurable via `summarize_timeout` in the config. Currently optimized for llama.cpp's `llama-cli`; other tools may work but output parsing is tailored to llama-cli's format.
+
+### Backend `api` (HTTP endpoint)
+
+```bash
+# 1. Set your API key (env var only — never put it in the config file):
+#    Bash:       export YTTRANSCRIPT_API_KEY="sk-..."
+#    Fish:       set -Ux YTTRANSCRIPT_API_KEY "sk-..."
+#    Systemd:    Environment="YTTRANSCRIPT_API_KEY=sk-..."
+
+# 2. Configure in ~/.config/yttranscript/config.toml:
+#   summarize_backend    = "api"
+#   summarize_api_url    = "https://api.openai.com/v1/chat/completions"
+#   summarize_api_model  = "gpt-4o-mini"
+#   summarize_prompt     = "Summarize this video in bullet points."
+
+# 3. Run:
+yttranscript URL --summarize
+
+# Or fully inline (the env var is still read from the environment):
+yttranscript URL --summarize \
+  --summarize-backend api \
+  --summarize-api-url "https://api.openai.com/v1/chat/completions" \
+  --summarize-api-model "gpt-4o-mini"
+```
+
+How it works: yttranscript POSTs a chat-completions request (`{model, messages, temperature: 0.3}`) with `summarize_prompt` + transcript as the user message. The response `choices[0].message.content` is returned as the summary. Uses only stdlib `urllib` — no extra dependencies. The API key is read from the environment variable named by `summarize_api_key_env` (default: `YTTRANSCRIPT_API_KEY`); to reuse an existing var, set `--summarize-api-key-env OPENAI_API_KEY`.
+
+Other OpenAI-compatible endpoints work by changing `summarize_api_url` + `summarize_api_model`, e.g. OpenRouter (`https://openrouter.ai/api/v1/chat/completions`), a local LM Studio server (`http://localhost:1234/v1/chat/completions`), Ollama's OpenAI shim (`http://localhost:11434/v1/chat/completions`), Groq, Together, etc.
+
+### Discovering accessible models
+
+To list the models your API key can use (helpful before picking `summarize_api_model`):
+
+```bash
+# Requires summarize_api_url in config (or --summarize-api-url) and the API key env var.
+yttranscript --summarize-api-list-models
+
+# Pipe to a fuzzy finder to pick one:
+yttranscript --summarize-api-list-models | grep gpt
+```
+
+This derives the `GET /models` endpoint from `summarize_api_url` (replacing `/chat/completions` with `/models`) and prints a table of `ID`, `Owner`, and `Created` date, sorted alphabetically.
 
 ## JSON Output
 

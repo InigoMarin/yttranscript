@@ -1,11 +1,21 @@
-"""Tests for yttranscript.summarize: command piping and output parsing."""
+"""Tests for yttranscript.summarize: command piping and HTTP API backends."""
 
 from __future__ import annotations
 
+import io
+import json
+import socket
 import subprocess
+import urllib.error
 from unittest.mock import patch
 
-from yttranscript.summarize import summarize_text
+from yttranscript.summarize import (
+    derive_models_url,
+    list_models,
+    summarize,
+    summarize_text,
+    summarize_text_api,
+)
 
 
 def _cp(returncode=0):
@@ -173,3 +183,303 @@ def test_summarize_prompt_prepended_to_input():
     with patch("yttranscript.summarize.subprocess.run", side_effect=capture):
         summarize_text("BODY", "cmd", "PROMPT")
     assert captured_input[0] == "PROMPT BODY"
+
+
+# --- API backend ----------------------------------------------------------
+
+class _FakeResp:
+    """Fake ``urllib.request.urlopen`` context manager returning canned bytes."""
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return self._body
+
+
+def _api_json(content: str = "This is the summary.") -> bytes:
+    return json.dumps({"choices": [{"message": {"content": content}}]}).encode("utf-8")
+
+
+def test_api_summarize_success_returns_content():
+    fake = _FakeResp(_api_json("Bullet one\nBullet two"))
+    with patch("yttranscript.summarize.urllib.request.urlopen", return_value=fake):
+        result = summarize_text_api("body", "https://x/v1/chat/completions", "gpt-x", "key", "Summarize")
+    assert result == "Bullet one\nBullet two"
+
+
+def test_api_summarize_strips_whitespace():
+    fake = _FakeResp(_api_json("   trimmed text   "))
+    with patch("yttranscript.summarize.urllib.request.urlopen", return_value=fake):
+        result = summarize_text_api("body", "https://x", "m", "k", "p")
+    assert result == "trimmed text"
+
+
+def test_api_summarize_prompt_in_payload():
+    captured = {}
+    fake = _FakeResp(_api_json("ok"))
+
+    def capture(req, **kw):
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        return fake
+
+    with patch("yttranscript.summarize.urllib.request.urlopen", side_effect=capture):
+        summarize_text_api("BODY", "https://x", "m", "k", "PROMPT")
+    msg = captured["body"]["messages"][0]["content"]
+    assert msg == "PROMPT BODY"
+    assert captured["body"]["model"] == "m"
+    assert captured["body"]["temperature"] == 0.3
+
+
+def test_api_summarize_sends_bearer_auth():
+    captured = {}
+    fake = _FakeResp(_api_json("ok"))
+
+    def capture(req, **kw):
+        captured["auth"] = req.get_header("Authorization")
+        captured["ctype"] = req.get_header("Content-type")
+        return fake
+
+    with patch("yttranscript.summarize.urllib.request.urlopen", side_effect=capture):
+        summarize_text_api("b", "https://x", "m", "SECRET", "p")
+    assert captured["auth"] == "Bearer SECRET"
+    assert captured["ctype"] == "application/json"
+
+
+# --- API backend: failure cases -------------------------------------------
+
+def test_api_summarize_empty_url_returns_none():
+    result = summarize_text_api("body", "", "m", "k", "p")
+    assert result is None
+
+
+def test_api_summarize_whitespace_url_returns_none():
+    result = summarize_text_api("body", "   ", "m", "k", "p")
+    assert result is None
+
+
+def test_api_summarize_empty_key_returns_none():
+    result = summarize_text_api("body", "https://x", "m", "", "p")
+    assert result is None
+
+
+def test_api_summarize_empty_model_returns_none():
+    result = summarize_text_api("body", "https://x", "", "k", "p")
+    assert result is None
+
+
+def test_api_summarize_http_error_returns_none():
+    err = urllib.error.HTTPError(
+        "https://x", 401, "Unauthorized", {}, io.BytesIO(b'{"error":"bad key"}')
+    )
+    with patch("yttranscript.summarize.urllib.request.urlopen", side_effect=err):
+        result = summarize_text_api("body", "https://x", "m", "k", "p")
+    assert result is None
+
+
+def test_api_summarize_http_error_unreadable_body_returns_none():
+    """HTTPError whose body cannot be read still yields None (defensive path)."""
+    class _Broken:
+        def read(self):
+            raise RuntimeError("stream gone")
+        def close(self):
+            pass
+    err = urllib.error.HTTPError("https://x", 500, "Server Error", {}, _Broken())
+    with patch("yttranscript.summarize.urllib.request.urlopen", side_effect=err):
+        result = summarize_text_api("body", "https://x", "m", "k", "p")
+    assert result is None
+
+
+def test_api_summarize_url_error_returns_none():
+    with patch("yttranscript.summarize.urllib.request.urlopen",
+               side_effect=urllib.error.URLError("connection refused")):
+        result = summarize_text_api("body", "https://x", "m", "k", "p")
+    assert result is None
+
+
+def test_api_summarize_timeout_returns_none():
+    with patch("yttranscript.summarize.urllib.request.urlopen",
+               side_effect=socket.timeout("timed out")):
+        result = summarize_text_api("body", "https://x", "m", "k", "p", timeout=1)
+    assert result is None
+
+
+def test_api_summarize_malformed_json_returns_none():
+    fake = _FakeResp(b"not json at all")
+    with patch("yttranscript.summarize.urllib.request.urlopen", return_value=fake):
+        result = summarize_text_api("body", "https://x", "m", "k", "p")
+    assert result is None
+
+
+def test_api_summarize_unexpected_structure_returns_none():
+    fake = _FakeResp(b'{"foo": "bar"}')
+    with patch("yttranscript.summarize.urllib.request.urlopen", return_value=fake):
+        result = summarize_text_api("body", "https://x", "m", "k", "p")
+    assert result is None
+
+
+def test_api_summarize_empty_content_returns_none():
+    fake = _FakeResp(_api_json(""))
+    with patch("yttranscript.summarize.urllib.request.urlopen", return_value=fake):
+        result = summarize_text_api("body", "https://x", "m", "k", "p")
+    assert result is None
+
+
+# --- dispatcher -----------------------------------------------------------
+
+def test_dispatcher_routes_to_api():
+    with patch("yttranscript.summarize.summarize_text_api", return_value="API RESULT") as m_api:
+        result = summarize(
+            "body", backend="api",
+            api_url="https://x", api_model="m", api_key="k", prompt="p",
+        )
+    m_api.assert_called_once()
+    assert result == "API RESULT"
+
+
+def test_dispatcher_routes_to_cmd():
+    with patch("yttranscript.summarize.summarize_text", return_value="CMD RESULT") as m_cmd:
+        result = summarize("body", backend="cmd", cmd="llama-cli", prompt="p")
+    m_cmd.assert_called_once()
+    assert result == "CMD RESULT"
+
+
+def test_dispatcher_unknown_backend_falls_back_to_cmd():
+    with patch("yttranscript.summarize.summarize_text", return_value="CMD") as m_cmd:
+        result = summarize("body", backend="weird", cmd="c", prompt="p")
+    m_cmd.assert_called_once()
+    assert result == "CMD"
+
+
+# --- derive_models_url ----------------------------------------------------
+
+def test_derive_models_url_standard_suffix():
+    assert derive_models_url(
+        "https://api.openai.com/v1/chat/completions"
+    ) == "https://api.openai.com/v1/models"
+
+
+def test_derive_models_url_without_suffix_appends():
+    # base URL without /chat/completions → append /models
+    assert derive_models_url("https://api.openai.com/v1") == "https://api.openai.com/v1/models"
+    assert derive_models_url("https://api.openai.com/v1/") == "https://api.openai.com/v1/models"
+
+
+def test_derive_models_url_custom_port():
+    assert derive_models_url(
+        "http://localhost:1234/v1/chat/completions"
+    ) == "http://localhost:1234/v1/models"
+
+
+# --- list_models ----------------------------------------------------------
+
+def _models_json() -> bytes:
+    return json.dumps({
+        "object": "list",
+        "data": [
+            {"id": "gpt-4o", "object": "model", "created": 1715367600, "owned_by": "openai"},
+            {"id": "gpt-4o-mini", "object": "model", "created": 1721260800, "owned_by": "openai"},
+            {"id": "o1-preview", "object": "model", "created": 1726099200, "owned_by": "system"},
+        ],
+    }).encode("utf-8")
+
+
+def test_list_models_success_returns_sorted_entries():
+    fake = _FakeResp(_models_json())
+    with patch("yttranscript.summarize.urllib.request.urlopen", return_value=fake):
+        result = list_models(
+            "https://api.openai.com/v1/chat/completions", "key"
+        )
+    assert result is not None
+    ids = [m["id"] for m in result]
+    assert ids == sorted(ids)  # sorted by id
+    assert "gpt-4o-mini" in ids
+    assert result[0]["owned_by"] in ("openai", "system")
+    assert isinstance(result[0]["created"], int)
+
+
+def test_list_models_uses_derived_url_and_bearer():
+    captured = {}
+    fake = _FakeResp(_models_json())
+
+    def capture(req, **kw):
+        captured["url"] = req.full_url
+        captured["auth"] = req.get_header("Authorization")
+        return fake
+
+    with patch("yttranscript.summarize.urllib.request.urlopen", side_effect=capture):
+        list_models("https://x/v1/chat/completions", "SECRET")
+    assert captured["url"] == "https://x/v1/models"
+    assert captured["auth"] == "Bearer SECRET"
+
+
+def test_list_models_empty_url_returns_none():
+    result = list_models("", "key")
+    assert result is None
+
+
+def test_list_models_empty_key_returns_none():
+    result = list_models("https://x/v1/chat/completions", "")
+    assert result is None
+
+
+def test_list_models_http_error_returns_none():
+    err = urllib.error.HTTPError(
+        "https://x", 401, "Unauthorized", {}, io.BytesIO(b'{"error":"bad key"}')
+    )
+    with patch("yttranscript.summarize.urllib.request.urlopen", side_effect=err):
+        result = list_models("https://x/v1/chat/completions", "k")
+    assert result is None
+
+
+def test_list_models_http_error_unreadable_body_returns_none():
+    """HTTPError whose body cannot be read still yields None (defensive path)."""
+    class _Broken:
+        def read(self):
+            raise RuntimeError("stream gone")
+        def close(self):
+            pass
+    err = urllib.error.HTTPError("https://x", 500, "Server Error", {}, _Broken())
+    with patch("yttranscript.summarize.urllib.request.urlopen", side_effect=err):
+        result = list_models("https://x/v1/chat/completions", "k")
+    assert result is None
+
+
+def test_list_models_url_error_returns_none():
+    with patch("yttranscript.summarize.urllib.request.urlopen",
+               side_effect=urllib.error.URLError("connection refused")):
+        result = list_models("https://x/v1/chat/completions", "k")
+    assert result is None
+
+
+def test_list_models_timeout_returns_none():
+    with patch("yttranscript.summarize.urllib.request.urlopen",
+               side_effect=socket.timeout("timed out")):
+        result = list_models("https://x/v1/chat/completions", "k", timeout=1)
+    assert result is None
+
+
+def test_list_models_malformed_json_returns_none():
+    fake = _FakeResp(b"not json")
+    with patch("yttranscript.summarize.urllib.request.urlopen", return_value=fake):
+        result = list_models("https://x/v1/chat/completions", "k")
+    assert result is None
+
+
+def test_list_models_empty_data_returns_empty_list():
+    fake = _FakeResp(b'{"object": "list", "data": []}')
+    with patch("yttranscript.summarize.urllib.request.urlopen", return_value=fake):
+        result = list_models("https://x/v1/chat/completions", "k")
+    assert result == []
+
+
+def test_list_models_missing_fields_defaulted():
+    fake = _FakeResp(b'{"data": [{"id": "weird"}]}')
+    with patch("yttranscript.summarize.urllib.request.urlopen", return_value=fake):
+        result = list_models("https://x/v1/chat/completions", "k")
+    assert result == [{"id": "weird", "owned_by": "?", "created": None}]

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import secrets
 import sys
 import tempfile
@@ -175,6 +176,7 @@ class TranscriptHandler(BaseHTTPRequestHandler):
             return
         timestamps = params.get("timestamps", ["0"])[0] == "1"
         summarize = params.get("summarize", ["0"])[0] == "1"
+        summarize_backend = params.get("summarize_backend", [None])[0]
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -211,12 +213,18 @@ class TranscriptHandler(BaseHTTPRequestHandler):
             safe_send({"type": level, "message": msg})
 
         config = load_config()
+        backend = summarize_backend or resolve_value(None, config, "summarize_backend")
+        api_key_env = resolve_value(None, config, "summarize_api_key_env")
         common_kwargs = dict(
             url=url, fmt=fmt, lang=lang, timestamps=timestamps,
             summarize=summarize,
             summarize_cmd=resolve_value(None, config, "summarize_cmd"),
             summarize_prompt=resolve_value(None, config, "summarize_prompt"),
             summarize_timeout=resolve_value(None, config, "summarize_timeout"),
+            summarize_backend=backend,
+            summarize_api_url=resolve_value(None, config, "summarize_api_url"),
+            summarize_api_model=resolve_value(None, config, "summarize_api_model"),
+            summarize_api_key=os.environ.get(api_key_env) if api_key_env else None,
             fallback_lang=resolve_value(None, config, "fallback_lang"),
             log_callback=log_callback,
         )

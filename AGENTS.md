@@ -33,7 +33,7 @@ Single Python package (`yttranscript/`) with entrypoint `yttranscript:main` (als
 - `ytdlp.py` — yt-dlp wrapper for subtitle extraction
 - `vtt.py` — VTT parsing and format conversion
 - `whisper.py` — Whisper transcription fallback
-- `summarize.py` — pipes transcript to external AI command (uses `script(1)` pseudo-terminal, BSD/Linux only)
+- `summarize.py` — summarization backends: `cmd` (pipes transcript to external AI command via `script(1)` pseudo-terminal, BSD/Linux only) and `api` (POSTs to an OpenAI-compatible HTTP endpoint via stdlib `urllib`). Dispatcher `summarize()` selects by `backend`. `list_models()` + `derive_models_url()` power `--summarize-api-list-models`.
 - `config.py` — XDG config loading (`~/.config/yttranscript/config.toml`)
 - `web.py` — local web UI (HTTP server with SSE streaming)
 - `pdf.py` — PDF/EPUB/DOCX export via Pandoc + Typst
