@@ -221,6 +221,7 @@ def process_video(
     work_dir: Optional[str] = None,
     output_dir: Optional[str] = None,
     use_cache: bool = True,
+    skip_cached: bool = False,
 ) -> Optional[tuple[str, Optional[str], dict]]:
     """Main processing pipeline. Returns (video_title, summary_markdown, video_info) or None.
 
@@ -300,6 +301,9 @@ def process_video(
                 if vid:
                     cached = cache_db.get_cached(vid, "txt", lang, timestamps=timestamps)
                     if cached:
+                        if skip_cached:
+                            info(f"Already in cache: {video_title}")
+                            return None
                         content, cached_info = cached
                         if summarize:
                             info("Found transcript in cache — skipping download.")

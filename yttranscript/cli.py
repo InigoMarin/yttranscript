@@ -201,6 +201,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip cache lookup. Force re-download/transcription.",
     )
     parser.add_argument(
+        "--skip-cached",
+        action="store_true",
+        help="Skip processing if the video is already in cache. Prints 'Already in cache' and exits.",
+    )
+    parser.add_argument(
         "--history",
         nargs="?",
         const=20,
@@ -285,6 +290,7 @@ def transcribe_batch(videos, args, channel_name: str = "", sections_list: list |
     config = load_config()
     cache_enabled = config.get("cache_enabled", DEFAULTS["cache_enabled"])
     use_cache = cache_enabled and not args.no_cache
+    skip_cached = use_cache and args.skip_cached
     lang = resolve_value(args.lang, config, "lang")
     fmt = resolve_value(args.format, config, "format")
     timestamps = resolve_value(args.timestamps, config, "timestamps") or False
@@ -340,6 +346,7 @@ def transcribe_batch(videos, args, channel_name: str = "", sections_list: list |
                 work_dir=args.work_dir,
                 output_dir=args.output_dir,
                 use_cache=use_cache,
+                skip_cached=skip_cached,
             )
             succeeded += 1
             if args.merge and result and result[1]:
@@ -521,6 +528,7 @@ def main() -> None:
 
     cache_enabled = config.get("cache_enabled", DEFAULTS["cache_enabled"])
     use_cache = cache_enabled and not args.no_cache
+    skip_cached = use_cache and args.skip_cached
 
     lang = resolve_value(args.lang, config, "lang")
     fmt = resolve_value(args.format, config, "format")
@@ -558,6 +566,7 @@ def main() -> None:
             work_dir=args.work_dir,
             output_dir=args.output_dir,
             use_cache=use_cache,
+            skip_cached=skip_cached,
         )
     except KeyboardInterrupt:
         print()
