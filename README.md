@@ -14,6 +14,7 @@ Export to **txt**, **VTT**, **SRT**, **JSON** (chunked for RAG), **PDF**, **EPUB
 - `--merge` combines all summaries from a batch into a single PDF/EPUB/DOCX
 - JSON output with configurable chunk size for RAG / vector DB ingestion
 - Local web UI with real-time SSE progress streaming
+- **SQLite cache**: transcripts are cached locally — re-running the same URL is instant
 - XDG-compliant config file (`~/.config/yttranscript/config.toml`)
 - Zero config needed — sensible defaults, auto-installs yt-dlp
 
@@ -142,6 +143,25 @@ yttranscript --show-config
 
 # Keep intermediate files
 yttranscript URL --keep-vtt --keep-audio
+
+# Re-download ignoring the cache
+yttranscript URL --no-cache
+
+# List recently transcribed videos from cache
+yttranscript --history
+yttranscript --history 50
+
+# Show cache statistics (totals, by format, by channel, DB size)
+yttranscript --cache-stats
+
+# Show cached metadata for a specific video
+yttranscript --cache-info URL
+
+# Remove a video from the cache
+yttranscript --cache-remove URL
+
+# Delete the entire cache
+yttranscript --cache-clear
 ```
 
 ## Options
@@ -176,6 +196,12 @@ yttranscript URL --keep-vtt --keep-audio
 | `--work-dir` | Directory for intermediate files (subtitle/audio/VTT). Default: private tempdir. |
 | `--output-dir` | Directory where the final transcript is saved. Default: current directory. |
 | `-V, --version` | Show version |
+| `--no-cache` | Skip cache lookup. Force re-download/transcription. |
+| `--history [N]` | List N most recently transcribed videos from cache (default: 20) |
+| `--cache-stats` | Show cache statistics (videos, formats, channels, DB size) |
+| `--cache-info URL` | Show cached metadata for a video |
+| `--cache-remove URL` | Remove a video from the cache by URL or video ID |
+| `--cache-clear` | Delete all cached transcripts and history |
 
 ### Whisper Models
 
@@ -209,6 +235,7 @@ Directory spec: `$XDG_CONFIG_HOME/yttranscript/config.toml` (defaults to
 # whisper_model = "base"
 # whisper_device = "gpu"
 # whisper_dir = "/home/user/.cache/whisper"
+# cache_enabled = true
 ```
 
 Priority: **CLI flag** > **config file** > **hardcoded default**
@@ -360,6 +387,7 @@ Features:
 | Variable | Effect |
 |---|---|
 | `XDG_CONFIG_HOME` | Override config directory (default: `~/.config`) |
+| `XDG_DATA_HOME` | Override data/cache directory for SQLite DB (default: `~/.local/share`) |
 | `NO_COLOR` | Disable ANSI color output (https://no-color.org) |
 | `CLICOLOR` | Set to `0` to disable color |
 | `CLICOLOR_FORCE` | Set to `1` to force color even when piped |
@@ -384,6 +412,50 @@ Features:
 Intermediate files (subtitles, audio) are written to a private temp directory by
 default (`--work-dir` to override). The final transcript is saved to the current
 directory (`--output-dir` to override).
+
+## Transcript Cache
+
+Every successful transcription is automatically stored in a local SQLite
+database at `~/.local/share/yttranscript/transcripts.db` (override with
+`$XDG_DATA_HOME`). Re-running the same URL+language+format combination
+returns instantly from cache — no network calls, no subtitle downloads.
+
+The cache stores video metadata (title, channel, duration, upload date,
+language), the transcript text, and any AI-generated summaries.
+
+```bash
+# Normal run — downloads and caches
+yttranscript URL
+
+# Second run — served from cache instantly
+yttranscript URL
+
+# Force re-download (ignore cache)
+yttranscript URL --no-cache
+
+# View history
+yttranscript --history          # last 20
+yttranscript --history 50       # last 50
+
+# Check stats
+yttranscript --cache-stats
+#   Total videos:      42
+#   Total transcripts: 58
+#   By format:         txt=42, json=12, vtt=4
+#   Top channels:      Fireship=18, Primeagen=15, ...
+#   Database size:     2.3 MB
+
+# Inspect or manage individual entries
+yttranscript --cache-info URL
+yttranscript --cache-remove URL
+yttranscript --cache-clear
+```
+
+Disable caching entirely in `config.toml`:
+
+```toml
+cache_enabled = false
+```
 
 ## Examples
 
