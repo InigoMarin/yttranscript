@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-06-14
+
+### Added
+- Debian/Ubuntu packaging (`make deb`, `make deb-install`): builds a `.deb` via `dh-python` + `pybuild` from the existing `pyproject.toml`. The `debian/changelog` version is generated from the Makefile's `VERSION` (no fifth place to bump manually).
+- `debian/` metadata: `control`, `rules`, `compat` (13), `postinst` (auto-installs `yt-dlp` via pip if missing, mirroring runtime behavior), `copyright`, `source/format` (native), `changelog.template`.
+- CI job `build-deb` on every push/PR: builds, verifies (`dpkg-deb -I/-c`), checks the `/usr/bin/yttranscript` entry point, and uploads the `.deb` as a workflow artifact.
+- Install instructions for Debian/Ubuntu in README.
+
+### Changed
+- CI `test` job now installs `typst` from the official statically-linked musl binary on GitHub releases (typst is not packaged in Ubuntu repos).
+- `pdf.py` error messages mention both `pacman` and `apt` install commands for `pandoc` and `typst`.
+- `README.md` Dependencies section lists `apt` equivalents.
+- `.gitignore` covers debhelper artifacts (`*.deb`, `*.changes`, `*.buildinfo`, `debian/.debhelper/`, `debian/changelog`, etc.).
+- `make clean` now removes both pacman and deb build artifacts.
+
 ## [2.14.0] - 2026-06-13
 
 ### Added

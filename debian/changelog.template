@@ -1,0 +1,5 @@
+yttranscript (__VERSION__-1) unstable; urgency=low
+
+  * Debian package built from upstream release __VERSION__.
+
+ -- ima <ima@ima.com>  __DATE__

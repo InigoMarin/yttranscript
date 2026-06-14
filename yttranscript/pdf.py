@@ -65,11 +65,13 @@ def _check_deps(fmt: str = "pdf") -> None:
     if not shutil.which("pandoc"):
         raise ImportError(
             f"{fmt.upper()} output requires 'pandoc'. "
-            "Install with: pacman -S pandoc  (or https://pandoc.org/installing.html)"
+            "Install with: pacman -S pandoc  |  apt install pandoc  "
+            "(or https://pandoc.org/installing.html)"
         )
     if fmt == "pdf" and not shutil.which("typst"):
         raise ImportError(
-            "PDF output requires 'typst'. Install with: pacman -S typst"
+            "PDF output requires 'typst'. "
+            "Install with: pacman -S typst  |  apt install typst"
         )
 
 

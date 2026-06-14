@@ -25,7 +25,19 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y pandoc typst
+          sudo apt-get install -y pandoc
+
+      - name: Install typst (not in Ubuntu repos)
+        run: |
+          set -e
+          # typst is not packaged in Ubuntu LTS; use the official statically-linked
+          # musl binary from GitHub releases.
+          TYPST_TARBALL="typst-x86_64-unknown-linux-musl.tar.xz"
+          wget -q "https://github.com/typst/typst/releases/latest/download/${TYPST_TARBALL}"
+          tar -xf "${TYPST_TARBALL}"
+          sudo install -m 0755 typst-x86_64-unknown-linux-musl/typst /usr/local/bin/typst
+          rm -rf "${TYPST_TARBALL}" typst-x86_64-unknown-linux-musl
+          typst --version
 
       - name: Install Python dependencies
         run: pip install -e ".[dev]"
@@ -35,3 +47,35 @@ jobs:
 
       - name: Test
         run: make test
+
+  build-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deb build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev debhelper dh-python python3-all \
+                                  python3-setuptools python3-build python3-pip
+
+      - name: Build .deb
+        run: make deb
+
+      - name: Verify .deb
+        run: |
+          set -e
+          DEB="../$(ls ../yttranscript_*.deb | head -n1)"
+          echo "Built: $DEB"
+          dpkg-deb -I "$DEB"
+          dpkg-deb -c "$DEB" | head -n 20
+          # Try installing into a throwaway chroot-like check
+          dpkg-deb -x "$DEB" /tmp/yttranscript-extract
+          test -x /tmp/yttranscript-extract/usr/bin/yttranscript
+          echo "Entry point /usr/bin/yttranscript present"
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yttranscript-deb
+          path: ../yttranscript_*.deb

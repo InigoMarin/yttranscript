@@ -41,6 +41,16 @@ sudo pacman -U yttranscript-*.pkg.tar.zst
 
 This installs the `yttranscript` command system-wide. Uninstall with `pacman -R yttranscript`.
 
+### Debian / Ubuntu
+
+```bash
+make deb
+sudo apt install ../yttranscript_*.deb
+```
+
+This installs the `yttranscript` command system-wide. Uninstall with `sudo apt remove yttranscript`.
+The first run will pull in `yt-dlp` via `pip` if the system package is missing or outdated.
+
 ### Development
 
 ```bash
@@ -460,9 +470,9 @@ Features:
 
 - **yt-dlp** — declared as a pip dependency (installed with `pip install .`); if missing at runtime, auto-installed via pip with brew/apt fallback
 - **openai-whisper** — only needed for Whisper fallback, prompted before install (install upfront with `pip install ".[whisper]"`)
-- **pandoc** — required for PDF, EPUB, and DOCX export (`pacman -S pandoc` or https://pandoc.org/installing.html)
-- **typst** — additionally required for PDF export (`pacman -S typst`)
-- **ffmpeg** — required by Whisper for audio processing
+- **pandoc** — required for PDF, EPUB, and DOCX export (`pacman -S pandoc` / `apt install pandoc` / https://pandoc.org/installing.html)
+- **typst** — additionally required for PDF export (`pacman -S typst` / `apt install typst`)
+- **ffmpeg** — required by Whisper for audio processing (`pacman -S ffmpeg` / `apt install ffmpeg`)
 - **script** (BSD/Linux `util-linux`) — required by `--summarize` to capture command output via pseudo-terminal (not available on Windows)
 
 ## How It Works

@@ -6,6 +6,9 @@
 make lint      # pyflakes yttranscript tests (not ruff/flake8)
 make test      # python -m pytest
 make test-cov  # pytest --cov=yttranscript --cov-report=term-missing
+make pkg       # build pacman (.pkg.tar.zst) package — requires makepkg (Arch)
+make deb       # build .deb package — requires dpkg-buildpackage (Debian/Ubuntu)
+make clean     # remove all build artifacts (pacman + deb)
 ```
 
 Run a single test file or test:
@@ -23,6 +26,10 @@ Version is defined in **four** places — all must match:
 2. `pyproject.toml` (`version` field)
 3. `Makefile` (`VERSION` variable)
 4. `PKGBUILD` (`pkgver` variable)
+
+The `debian/changelog` version is **generated** from the Makefile's
+`VERSION` at `make deb` time (via `debian/changelog.template`), so it is
+*not* a fifth place to bump manually. Do not commit `debian/changelog`.
 
 ## Architecture
 
@@ -52,6 +59,7 @@ Package data bundled: `web_ui.html`, `templates/*.typ`.
 ## Gotchas
 
 - `src/` and `pkg/` are makepkg build artifacts (in `.gitignore`), not source directories
+- `*.deb`, `*.changes`, `*.buildinfo`, `debian/.debhelper/`, `debian/files`, `debian/changelog` and `debian/yttranscript/` are debhelper artifacts (also in `.gitignore`)
 - Linter is **pyflakes** only — no style enforcer (no black/ruff/pycodestyle)
 - PDF export requires external `pandoc` + `typst` installed on the system
 - Whisper requires `ffmpeg` and is an optional dependency (`pip install ".[whisper]"`)

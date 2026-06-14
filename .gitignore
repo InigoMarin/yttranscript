@@ -35,3 +35,20 @@ yttranscript-*/
 *.tar.gz
 *.pkg.tar.xz
 *.pkg.tar.gz
+
+# debuild artifacts (generated one level above)
+/*.deb
+/*.changes
+/*.buildinfo
+/*.dsc
+
+# debhelper artifacts (inside debian/)
+debian/.debhelper/
+debian/files
+debian/*debhelper*
+debian/debhelper-build-stamp
+debian/yttranscript.substvars
+debian/yttranscript/
+debian/tmp/
+debian/changelog
+debian/.vscode/
