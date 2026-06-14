@@ -142,8 +142,11 @@ def send_email(
         tmp_path = Path(tmp.name)
 
     try:
-        cmd = [himalaya_bin, "message", "send", "-f", str(tmp_path)]
-        debug(f"$ {' '.join(cmd[:4])} ...")
+        # himalaya v1.2 takes the raw message path as a positional argument
+        # (`himalaya message send [OPTIONS] [MESSAGE]...`). Earlier versions
+        # also accepted a positional path; the deprecated `-f` flag was removed.
+        cmd = [himalaya_bin, "message", "send", str(tmp_path)]
+        debug(f"$ {' '.join(cmd[:3])} <eml>")
         info(f"Sending email to {to} ({attachment.name}, "
              f"{attachment.stat().st_size // 1024} KB)...")
         result = subprocess.run(

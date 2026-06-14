@@ -149,9 +149,9 @@ def test_send_email_invokes_himalaya_with_message_send(tmp_path):
         )
     cmd = mock_run.call_args[0][0]
     assert cmd[0] == "himalaya"
-    assert cmd[1:4] == ["message", "send", "-f"]
-    # The -f argument points to a temp .eml file
-    eml_path = Path(cmd[4])
+    assert cmd[1:3] == ["message", "send"]
+    # The 4th element is the positional path to the temp .eml file
+    eml_path = Path(cmd[3])
     assert eml_path.suffix == ".eml"
     # Temp file is cleaned up after send
     assert not eml_path.exists()
@@ -206,8 +206,8 @@ def test_send_email_cleans_up_tempfile_even_on_failure(tmp_path):
     captured_paths: list[str] = []
 
     def fake_run(cmd, **kwargs):
-        # The 5th element is the temp .eml path
-        captured_paths.append(cmd[4])
+        # The 4th element is the temp .eml path (positional argument)
+        captured_paths.append(cmd[3])
         return _cp(1, stderr="boom")
 
     with patch("yttranscript.mail.shutil.which", return_value="/usr/bin/himalaya"), \
