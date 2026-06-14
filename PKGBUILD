@@ -12,6 +12,7 @@ optdepends=(
     'python-openai-whisper: for Whisper transcription fallback'
     'pandoc: for PDF output'
     'typst: for PDF output'
+    'himalaya: for --email output'
 )
 source=("$pkgname-$pkgver.tar.gz")
 sha256sums=('SKIP')

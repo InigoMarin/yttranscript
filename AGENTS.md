@@ -82,4 +82,4 @@ Package data bundled: `web_ui.html`, `templates/*.typ`.
 - PDF export requires external `pandoc` + `typst` installed on the system
 - Whisper requires `ffmpeg` and is an optional dependency (`pip install ".[whisper]"`)
 - `yt-dlp` auto-installs itself at runtime if missing (pip → brew/apt fallback), so missing `yt-dlp` is not an error condition in the code
-- `--email TO` requires `himalaya` to be installed and configured separately (no auto-install); used only when the flag is passed
+- `--email TO` requires `himalaya` to be installed and configured separately (no auto-install); used only when the flag is passed. The `.deb` lists `himalaya` (and `typst`) as `Recommends:` and the pacman `PKGBUILD` as `optdepends`, so a default `apt install` / `pacman -U` pulls them in on distros where they are packaged; the Debian `postinst` prints a NOTE when either is still missing.

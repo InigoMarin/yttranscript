@@ -19,7 +19,8 @@ Depends: ${python3:Depends},
  ffmpeg,
  util-linux
 Recommends: pandoc,
- typst
+ typst,
+ himalaya
 Suggests: python3-openai-whisper
 Description: Download YouTube video transcripts with Whisper fallback
  Auto-detects video language and tries manual -> auto-generated subtitles -> Whisper.
