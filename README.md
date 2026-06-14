@@ -56,6 +56,71 @@ Alternatively, download the prebuilt `.deb` from the
 [Releases page](https://github.com/InigoMarin/yttranscript/releases) and
 install it with `sudo apt install ./yttranscript_*.deb`.
 
+### Docker
+
+A self-contained `Dockerfile` is included for running `yttranscript` without
+installing anything on the host. The image bundles `pandoc`, `typst`, and
+`himalaya`, so **PDF / EPUB / DOCX export and `--email TO` work out of the
+box**. Whisper is *not* included (use `pip install ".[whisper]"` on the host
+if you need transcription fallback).
+
+```bash
+# Build (multi-arch: auto-detects amd64 / arm64)
+docker build -t yttranscript .
+```
+
+Run patterns (the `ENTRYPOINT` is `yttranscript`, so flags pass directly):
+
+```bash
+# Basic — transcript to the current host directory
+docker run --rm -v "$PWD:/data" yttranscript \
+    "https://youtube.com/watch?v=VIDEO_ID" --output-dir /data
+
+# Export as PDF (pandoc + typst already in the image)
+docker run --rm -v "$PWD:/data" yttranscript \
+    "https://youtube.com/watch?v=VIDEO_ID" --format pdf --output-dir /data
+
+# Reuse your host config (yttranscript + himalaya) and send via email
+docker run --rm -v "$PWD:/data" -v "$HOME/.config:/config" \
+    yttranscript URL --format pdf --output-dir /data --email to@example.com
+
+# Use the summarize API backend (key from host env, never baked in)
+docker run --rm -v "$PWD:/data" -e YTTRANSCRIPT_API_KEY="sk-..." \
+    yttranscript URL --summarize --summarize-backend api \
+    --summarize-api-url "https://api.openai.com/v1/chat/completions" \
+    --summarize-api-model gpt-4o-mini --output-dir /data
+
+# Persist the SQLite cache across runs
+docker run --rm -v "$PWD:/data" -v yttranscript-cache:/home/app/.local/share \
+    yttranscript URL --output-dir /data
+
+# Match host uid to avoid file ownership issues on the bind mount
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" \
+    yttranscript URL --output-dir /data
+```
+
+Volumes and paths inside the container:
+
+| Host mount | Container path | Purpose |
+|---|---|---|
+| transcript output | `/data` (workdir) | Where `--output-dir` writes |
+| `~/.config` | `/config` (`$XDG_CONFIG_HOME`) | `yttranscript/config.toml` + `himalaya/config.toml` |
+| named volume | `/home/app/.local/share` | SQLite cache (`transcripts.db`) |
+| named volume | `/home/app/.cache` | yt-dlp / himalaya runtime caches |
+
+Notes:
+
+- The container runs as a **non-root user `app` (uid 1000)**. If your host
+  uid differs, pass `--user "$(id -u):$(id -g)"` or `chown` the bind mount.
+- `$XDG_CONFIG_HOME=/config` is preset, so mounting `~/.config:/config`
+  makes both `yttranscript` and `himalaya` find their configs.
+- The image is built from the local repo (`pip wheel` + `pip install`),
+  not from PyPI — useful for testing unreleased changes.
+- For reproducible builds, pin the upstream binary versions by replacing
+  `releases/latest/download/` in the `Dockerfile` with a specific tag
+  (e.g. `typst/releases/download/v0.14.2/`,
+  `himalaya/releases/download/v1.2.0/`).
+
 ### Development
 
 ```bash

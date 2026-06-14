@@ -1,0 +1,43 @@
+# VCS and CI metadata
+.git
+.github
+.gitignore
+
+# Agent / editor / opencode tooling
+.agents
+.opencode
+.vscode
+.idea
+
+# Tests and coverage artifacts (not needed at runtime)
+tests
+pytest_cache
+.coverage
+.coverage.*
+
+# Python bytecode and caches
+__pycache__
+*.pyc
+*.pyo
+
+# Build artifacts (pacman, deb, wheels, tarballs)
+pkg
+src
+dist
+build
+debian
+*.pkg.tar.*
+*.tar.gz
+*.deb
+*.changes
+*.buildinfo
+*.dsc
+*.egg-info
+*.whl
+
+# Local release staging dirs created by `make pkg`
+yttranscript-*/
+
+# Local-only files that should never be COPYied into the image
+.env
+*.log
