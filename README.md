@@ -559,7 +559,7 @@ The RFC 5322 message is piped to `himalaya message send` over stdin (required by
 
 ## Dependencies
 
-- **yt-dlp** — declared as a pip dependency (installed with `pip install .`); if missing at runtime, auto-installed via pip with brew/apt fallback
+- **yt-dlp** — optional dependency; auto-installed via pip on first run if missing. Install upfront with `pip install "yttranscript[ytdlp]"` (or `pacman -S yt-dlp` on Arch).
 - **openai-whisper** — only needed for Whisper fallback, prompted before install (install upfront with `pip install ".[whisper]"`)
 - **pandoc** — required for PDF, EPUB, and DOCX export (`pacman -S pandoc` / `apt install pandoc` / https://pandoc.org/installing.html)
 - **typst** — additionally required for PDF export (`pacman -S typst` / `apt install typst` on Debian 13+ / `bash scripts/install-typst.sh` for a static binary on Ubuntu and other distros without the package)

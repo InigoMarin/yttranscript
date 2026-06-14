@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yttranscript"
-version = "2.16.2"
+version = "2.16.3"
 description = "Download YouTube video transcripts (subtitles/captions) with Whisper fallback."
 readme = "README.md"
 license = { text = "MIT" }
@@ -26,12 +26,12 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    "yt-dlp",
     "tomli >= 1.1.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
 whisper = ["openai-whisper"]
+ytdlp = ["yt-dlp"]
 pdf = []
 dev = [
     "pytest>=7",

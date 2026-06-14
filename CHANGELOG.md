@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.16.3] - 2026-06-14
+
+### Changed
+- `yt-dlp` moved from a hard to an optional pip dependency (`pip install "yttranscript[ytdlp]"`). The Debian package no longer pulls `yt-dlp` via `${python3:Depends}`, avoiding stale apt versions on Debian 12 / Ubuntu LTS that triggered YouTube bot-detection errors. The `postinst` continues to install yt-dlp via pip when missing, and the runtime auto-install in `ytdlp.ensure_yt_dlp()` is unchanged. The pacman `PKGBUILD` still hard-requires `yt-dlp` (Arch rolling release is always current).
+
 ## [2.16.2] - 2026-06-14
 
 ### Fixed
