@@ -17,6 +17,7 @@ Architecture: all
 Depends: ${python3:Depends},
  ${misc:Depends},
  ffmpeg,
+ pipx,
  util-linux
 Recommends: pandoc,
  typst,
@@ -26,4 +27,4 @@ Description: Download YouTube video transcripts with Whisper fallback
  Auto-detects video language and tries manual -> auto-generated subtitles -> Whisper.
  Exports to txt, VTT, SRT, JSON, PDF, EPUB, DOCX with optional AI summarization.
  .
- yt-dlp is pulled in at runtime via pip if not already installed.
+ yt-dlp is pulled in at runtime via pipx (pip as fallback) if not already installed.

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
 
-from .log import info, success, error, warn
+from .log import info, success, error, warn, debug
 from .util import run, command_exists, confirm, sanitize_filename, TranscriptError
 
 # Sensible per-call subprocess timeouts (seconds). They are safety nets to
@@ -29,6 +30,24 @@ def ensure_yt_dlp() -> None:
 
     info("yt-dlp not found, installing...")
     try:
+        if command_exists("pipx"):
+            result = run(["pipx", "install", "yt-dlp"],
+                         capture=True, check=False, timeout=TIMEOUT_PIP_INSTALL)
+            if result.returncode == 0:
+                # pipx installs into ~/.local/bin which may not yet be on PATH
+                # for this shell session; extend PATH so the binary is usable now.
+                _ensure_local_bin_on_path()
+                if command_exists("yt-dlp"):
+                    success("yt-dlp installed")
+                    return
+                raise TranscriptError(
+                    "pipx installed yt-dlp but it is not on your PATH. "
+                    "Reopen your shell or add ~/.local/bin to PATH, then rerun."
+                )
+            warn("pipx install failed, trying alternatives...")
+            if result.stderr.strip():
+                debug(f"pipx stderr: {result.stderr.strip()}")
+
         try:
             run([sys.executable, "-m", "pip", "--version"],
                 capture=True, check=True, timeout=30)
@@ -37,15 +56,16 @@ def ensure_yt_dlp() -> None:
             pip_available = False
 
         if pip_available:
-            try:
-                run([sys.executable, "-m", "pip", "install", "yt-dlp"],
-                    timeout=TIMEOUT_PIP_INSTALL)
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                warn("pip install failed, trying alternatives...")
-            else:
+            result = run([sys.executable, "-m", "pip", "install", "yt-dlp"],
+                         capture=True, check=False, timeout=TIMEOUT_PIP_INSTALL)
+            if result.returncode == 0:
                 if command_exists("yt-dlp"):
                     success("yt-dlp installed")
                     return
+            else:
+                warn("pip install failed, trying alternatives...")
+                if result.stderr.strip():
+                    debug(f"pip stderr: {result.stderr.strip()}")
 
         if command_exists("brew"):
             if confirm("Install yt-dlp via Homebrew?"):
@@ -66,6 +86,18 @@ def ensure_yt_dlp() -> None:
             "https://github.com/yt-dlp/yt-dlp#installation"
         )
     success("yt-dlp installed")
+
+
+def _ensure_local_bin_on_path() -> None:
+    """Prepend ~/.local/bin to PATH for this process if not already present.
+
+    pipx installs CLI binaries there; on first install in a long-lived shell
+    that directory may not yet be on PATH. Mutates os.environ['PATH'] in place.
+    """
+    local_bin = str(Path.home() / ".local" / "bin")
+    current = os.environ.get("PATH", "")
+    if local_bin not in current.split(os.pathsep):
+        os.environ["PATH"] = f"{local_bin}{os.pathsep}{current}"
 
 
 def ensure_whisper() -> bool:

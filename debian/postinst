@@ -8,9 +8,13 @@ set -e
 case "$1" in
     configure)
         if ! command -v yt-dlp >/dev/null 2>&1; then
-            echo "yttranscript: yt-dlp not found, installing via pip..." >&2
-            python3 -m pip install --break-system-packages yt-dlp || \
-                echo "yttranscript: WARNING: could not install yt-dlp; the tool will retry on first run." >&2
+            echo "yttranscript: yt-dlp not found, installing via pipx..." >&2
+            if pipx install --global yt-dlp 2>/dev/null; then
+                : # installed successfully
+            else
+                python3 -m pip install --break-system-packages yt-dlp || \
+                    echo "yttranscript: WARNING: could not install yt-dlp; the tool will retry on first run." >&2
+            fi
         fi
         if ! command -v typst >/dev/null 2>&1; then
             echo "yttranscript: NOTE: 'typst' not found; PDF/EPUB/DOCX export will be unavailable." >&2

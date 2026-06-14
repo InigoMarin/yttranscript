@@ -255,14 +255,16 @@ def test_ensure_yt_dlp_already_installed():
         ensure_yt_dlp()  # should be a no-op
 
 
-def test_ensure_yt_dlp_install_via_pip_success():
-    """pip is tried first; on success yt-dlp is available and no sudo is used."""
+def test_ensure_yt_dlp_install_via_pipx_success():
+    """pipx is tried first; on success yt-dlp is available and no sudo is used."""
     yt_dlp_checks = {"n": 0}
 
     def fake_command_exists(cmd):
         if cmd == "yt-dlp":
             yt_dlp_checks["n"] += 1
             return yt_dlp_checks["n"] >= 2
+        if cmd == "pipx":
+            return True
         return False
 
     with patch("yttranscript.ytdlp.command_exists", side_effect=fake_command_exists), \
@@ -270,25 +272,85 @@ def test_ensure_yt_dlp_install_via_pip_success():
          patch("yttranscript.ytdlp.confirm") as m_confirm:
         ensure_yt_dlp()
         m_confirm.assert_not_called()
+        pipx_calls = [c for c in m_run.call_args_list if "pipx" in c.args[0]]
+        assert len(pipx_calls) == 1
         for call_args in m_run.call_args_list:
             assert "sudo" not in call_args.args[0]
 
 
-def test_ensure_yt_dlp_pip_fails_falls_back_to_apt():
-    """pip install fails -> apt available -> confirm yes -> sudo apt runs."""
+def test_ensure_yt_dlp_pipx_fails_falls_back_to_pip():
+    """pipx install fails -> pip available -> pip install runs and succeeds."""
     yt_dlp_checks = {"n": 0}
 
     def fake_command_exists(cmd):
         if cmd == "yt-dlp":
             yt_dlp_checks["n"] += 1
             return yt_dlp_checks["n"] >= 2
+        if cmd == "pipx":
+            return True
+        return False
+
+    def fake_run(cmd, **kwargs):
+        if "pipx" in cmd:
+            return _cp(1, "pipx error")
+        return _cp(0, "")
+
+    with patch("yttranscript.ytdlp.command_exists", side_effect=fake_command_exists), \
+         patch("yttranscript.ytdlp.run", side_effect=fake_run) as m_run:
+        ensure_yt_dlp()
+        pipx_calls = [c for c in m_run.call_args_list if "pipx" in c.args[0]]
+        pip_install_calls = [
+            c for c in m_run.call_args_list
+            if "pip" in c.args[0] and "install" in c.args[0]
+        ]
+        assert len(pipx_calls) == 1
+        assert len(pip_install_calls) == 1
+
+
+def test_ensure_yt_dlp_pipx_success_but_not_on_path():
+    """pipx reports success but yt-dlp not on PATH -> TranscriptError, no pip fallback."""
+    def fake_command_exists(cmd):
+        if cmd == "pipx":
+            return True
+        return False  # yt-dlp never appears, even after PATH extension
+
+    def fake_run(cmd, **kwargs):
+        if "pipx" in cmd:
+            return _cp(0, "")  # pipx succeeds
+        return _cp(0, "")
+
+    with patch("yttranscript.ytdlp.command_exists", side_effect=fake_command_exists), \
+         patch("yttranscript.ytdlp.run", side_effect=fake_run) as m_run:
+        with pytest.raises(TranscriptError) as exc_info:
+            ensure_yt_dlp()
+        assert "not on your PATH" in str(exc_info.value)
+        # pip install must NOT be called (avoids duplicate install)
+        pip_install_calls = [
+            c for c in m_run.call_args_list
+            if "pip" in c.args[0] and "install" in c.args[0]
+        ]
+        assert len(pip_install_calls) == 0
+
+
+def test_ensure_yt_dlp_pipx_and_pip_fail_falls_back_to_apt():
+    """pipx and pip both fail -> apt available -> confirm yes -> sudo apt runs."""
+    yt_dlp_checks = {"n": 0}
+
+    def fake_command_exists(cmd):
+        if cmd == "yt-dlp":
+            yt_dlp_checks["n"] += 1
+            return yt_dlp_checks["n"] >= 2
+        if cmd == "pipx":
+            return True
         if cmd == "apt":
             return True
         return False
 
     def fake_run(cmd, **kwargs):
+        if "pipx" in cmd:
+            return _cp(1, "pipx error")
         if "pip" in cmd and "install" in cmd:
-            raise subprocess.CalledProcessError(1, cmd)
+            return _cp(1, "pip error")
         return _cp(0, "")
 
     with patch("yttranscript.ytdlp.command_exists", side_effect=fake_command_exists), \
@@ -301,16 +363,20 @@ def test_ensure_yt_dlp_pip_fails_falls_back_to_apt():
         assert len(sudo_calls) == 2
 
 
-def test_ensure_yt_dlp_pip_fails_apt_declined():
-    """pip fails -> apt confirm returns False -> TranscriptError, no sudo."""
+def test_ensure_yt_dlp_pipx_and_pip_fail_apt_declined():
+    """pipx and pip both fail -> apt confirm returns False -> TranscriptError, no sudo."""
     def fake_command_exists(cmd):
+        if cmd == "pipx":
+            return True
         if cmd == "apt":
             return True
         return False
 
     def fake_run(cmd, **kwargs):
+        if "pipx" in cmd:
+            return _cp(1, "pipx error")
         if "pip" in cmd and "install" in cmd:
-            raise subprocess.CalledProcessError(1, cmd)
+            return _cp(1, "pip error")
         return _cp(0, "")
 
     with patch("yttranscript.ytdlp.command_exists", side_effect=fake_command_exists), \
@@ -322,8 +388,8 @@ def test_ensure_yt_dlp_pip_fails_apt_declined():
             assert "sudo" not in call_args.args[0]
 
 
-def test_ensure_yt_dlp_pip_unavailable_brew_install():
-    """pip not available -> brew available -> confirm yes -> brew install."""
+def test_ensure_yt_dlp_no_pipx_no_pip_brew_install():
+    """pipx and pip both unavailable -> brew available -> confirm yes -> brew install."""
     yt_dlp_checks = {"n": 0}
 
     def fake_command_exists(cmd):
@@ -349,8 +415,8 @@ def test_ensure_yt_dlp_pip_unavailable_brew_install():
         assert len(brew_calls) == 1
 
 
-def test_ensure_yt_dlp_pip_unavailable_no_managers():
-    """pip not available, no brew/apt -> TranscriptError with manual URL."""
+def test_ensure_yt_dlp_no_pipx_no_pip_no_managers():
+    """pipx and pip unavailable, no brew/apt -> TranscriptError with manual URL."""
     def fake_run(cmd, **kwargs):
         if "pip" in cmd and "--version" in cmd:
             raise subprocess.CalledProcessError(1, cmd)

@@ -6,7 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.16.3] - 2026-06-14
+## [2.16.4] - 2026-06-14
+
+### Changed
+- yt-dlp auto-install now prefers `pipx` over `pip` as the first fallback (runtime `ytdlp.ensure_yt_dlp()` and Debian `postinst`). pipx installs yt-dlp into an isolated venv at `~/.local/bin`, avoiding PEP 668 `externally-managed-environment` errors on Debian 12+ / Ubuntu 23.04+ where system `pip install` is blocked. `pip` remains as a secondary fallback, followed by `brew`/`apt` as before. The `.deb` now declares `pipx` as a `Depends:` so the preferred path is always available.
+
+### Fixed
+- When `pipx install yt-dlp` succeeded but `~/.local/bin` was not yet on `PATH` for the current shell, the runtime auto-installer previously fell through to `pip install`, leaving yt-dlp installed twice (pipx venv + system pip). `ensure_yt_dlp()` now extends `PATH` with `~/.local/bin` in-process and, if yt-dlp is still not found, raises a clear `TranscriptError` instead of duplicating the install.
+- Failure messages from `pipx`/`pip` are no longer hidden behind a generic "trying alternatives..." warning: the captured stderr is re-emitted via `debug()` (visible with `-v`) for easier diagnosis.
 
 ### Changed
 - `yt-dlp` moved from a hard to an optional pip dependency (`pip install "yttranscript[ytdlp]"`). The Debian package no longer pulls `yt-dlp` via `${python3:Depends}`, avoiding stale apt versions on Debian 12 / Ubuntu LTS that triggered YouTube bot-detection errors. The `postinst` continues to install yt-dlp via pip when missing, and the runtime auto-install in `ytdlp.ensure_yt_dlp()` is unchanged. The pacman `PKGBUILD` still hard-requires `yt-dlp` (Arch rolling release is always current).

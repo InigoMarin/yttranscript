@@ -81,5 +81,5 @@ Package data bundled: `web_ui.html`, `templates/*.typ`.
 - Linter is **pyflakes** only — no style enforcer (no black/ruff/pycodestyle)
 - PDF export requires external `pandoc` + `typst` installed on the system
 - Whisper requires `ffmpeg` and is an optional dependency (`pip install ".[whisper]"`)
-- `yt-dlp` auto-installs itself at runtime if missing (pip → brew/apt fallback), so missing `yt-dlp` is not an error condition in the code
+- `yt-dlp` auto-installs itself at runtime if missing (pipx → pip → brew/apt fallback), so missing `yt-dlp` is not an error condition in the code
 - `--email TO` requires `himalaya` to be installed and configured separately (no auto-install); used only when the flag is passed. The `.deb` lists `himalaya` (and `typst`) as `Recommends:` and the pacman `PKGBUILD` as `optdepends`. Neither binary is packaged in Ubuntu (any release) nor in Debian < 13; on those systems the Debian `postinst` prints a NOTE pointing to the upstream GitHub releases, and the user can use `scripts/install-himalaya.sh` / `scripts/install-typst.sh` to fetch the static binaries.
