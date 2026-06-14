@@ -56,8 +56,9 @@ jobs:
       - name: Install deb build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev debhelper dh-python python3-all \
-                                  python3-setuptools python3-build python3-pip
+          sudo apt-get install -y --no-install-recommends \
+            build-essential dpkg-dev debhelper dh-python python3-all \
+            python3-setuptools python3-build python3-installer python3-pip
 
       - name: Build .deb
         run: make deb
