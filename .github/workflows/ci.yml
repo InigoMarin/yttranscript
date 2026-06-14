@@ -78,9 +78,14 @@ jobs:
           test -x /tmp/yttranscript-extract/usr/bin/yttranscript
           echo "Entry point /usr/bin/yttranscript present"
 
+      - name: Stage .deb into workspace
+        run: |
+          mkdir -p build-artifacts
+          cp ../yttranscript_*.deb build-artifacts/
+          ls -la build-artifacts/
+
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
           name: yttranscript-deb
-          path: |
-            ../*.deb
+          path: build-artifacts/*.deb
