@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.16.2] - 2026-06-14
+
+### Fixed
+- Debian `postinst` NOTE messages for missing `typst`/`himalaya` no longer claim they are installable via `apt` on Ubuntu 24.04+ — neither binary is packaged in any Ubuntu release. The NOTE now points to Debian 13 trixie+ as the `apt` source and to the upstream GitHub releases as the universal fallback.
+- README "Dependencies" section clarifies that `apt install typst` / `apt install himalaya` only work on Debian 13+, and points to the new install scripts.
+
+### Added
+- `scripts/install-himalaya.sh` and `scripts/install-typst.sh`: download the latest static musl binary from GitHub releases (auto-detects `x86_64`/`aarch64`, supports `--version vX.Y.Z`) and install it into `/usr/local/bin`. Useful on Ubuntu and any distro without the apt package; no compilation required.
+
 ## [2.16.1] - 2026-06-14
 
 ### Added
