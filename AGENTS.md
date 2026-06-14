@@ -31,6 +31,23 @@ The `debian/changelog` version is **generated** from the Makefile's
 `VERSION` at `make deb` time (via `debian/changelog.template`), so it is
 *not* a fifth place to bump manually. Do not commit `debian/changelog`.
 
+## Releases
+
+GitHub Releases are produced automatically by `.github/workflows/release.yml`
+when a tag matching `v*` is pushed. The workflow builds the `.deb` on
+Ubuntu and publishes it with the corresponding `CHANGELOG.md` section as
+release notes.
+
+Release flow:
+
+1. Bump version in the **four** places listed above.
+2. Add a `## [X.Y.Z] - YYYY-MM-DD` section at the top of `CHANGELOG.md`.
+3. `git commit -am "Bump version to X.Y.Z"` and `git push`.
+4. `git tag vX.Y.Z && git push --tags` — this fires the release workflow.
+5. The Arch `.pkg.tar.zst` is **not** built by CI (GitHub has no native
+   Arch runner); produce it locally with `make pkg` and attach it to the
+   release with `gh release upload vX.Y.Z *.pkg.tar.zst` if desired.
+
 ## Architecture
 
 Single Python package (`yttranscript/`) with entrypoint `yttranscript:main` (also `python -m yttranscript`).

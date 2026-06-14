@@ -1,0 +1,69 @@
+name: Release
+
+# Triggers when a tag matching `v*` is pushed (e.g. v2.15.0).
+# Builds the .deb on Ubuntu and publishes a GitHub Release with it.
+# The Arch .pkg.tar.zst is still produced locally with `make pkg`
+# and attached separately if desired.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # required to create a Release and upload assets
+
+jobs:
+  release-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install deb build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential dpkg-dev debhelper dh-python python3-all \
+            python3-setuptools python3-build python3-installer python3-pip
+
+      - name: Derive version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build .deb
+        run: make deb
+
+      - name: Stage .deb into workspace
+        run: |
+          mkdir -p release-assets
+          cp ../yttranscript_*.deb release-assets/
+          echo "--- Staged artifacts ---"
+          ls -la release-assets/
+
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          HEADER="## [${VERSION}]"
+          awk -v h="$HEADER" '
+            index($0, h) == 1 { in_section = 1; next }
+            /^## \[/ && in_section { in_section = 0 }
+            in_section { print }
+          ' CHANGELOG.md > release-notes.md
+          # Sanity check: empty notes mean a CHANGELOG section is missing
+          if [ ! -s release-notes.md ]; then
+            echo "ERROR: no CHANGELOG.md section found for [${VERSION}]"
+            exit 1
+          fi
+          echo "--- Release notes ---"
+          cat release-notes.md
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: release-assets/*.deb
+          fail_on_unmatched_files: true
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

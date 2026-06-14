@@ -51,6 +51,10 @@ sudo apt install ../yttranscript_*.deb
 This installs the `yttranscript` command system-wide. Uninstall with `sudo apt remove yttranscript`.
 The first run will pull in `yt-dlp` via `pip` if the system package is missing or outdated.
 
+Alternatively, download the prebuilt `.deb` from the
+[Releases page](https://github.com/InigoMarin/yttranscript/releases) and
+install it with `sudo apt install ./yttranscript_*.deb`.
+
 ### Development
 
 ```bash
