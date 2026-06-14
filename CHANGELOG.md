@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.16.1] - 2026-06-14
+
+### Added
+- Multi-arch (`amd64`/`arm64`) Docker image (`Dockerfile` + `.dockerignore`) bundling `pandoc`, `typst` and `himalaya`, so PDF/EPUB/DOCX export and `--email TO` work out of the box. Runs as non-root uid 1000 with `XDG_CONFIG_HOME=/config`. README documents the build/run patterns and volume mounts.
+- `himalaya` is now a `Recommends:` of the `.deb` (alongside `typst` and `pandoc`) and an `optdepends` of the pacman `PKGBUILD`, so a default `apt install` / `pacman -U` pulls it in on distros where it is packaged.
+
+### Changed
+- Debian `postinst` now prints a clear NOTE when `typst` or `himalaya` are absent from `PATH` (no auto-install attempt; mirrors the existing `yt-dlp` NOTE pattern).
+
 ## [2.16.0] - 2026-06-14
 
 ### Added
