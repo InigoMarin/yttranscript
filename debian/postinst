@@ -14,11 +14,13 @@ case "$1" in
         fi
         if ! command -v typst >/dev/null 2>&1; then
             echo "yttranscript: NOTE: 'typst' not found; PDF/EPUB/DOCX export will be unavailable." >&2
-            echo "yttranscript:       install it with 'apt install typst' (Debian 13+/Ubuntu 24.04+)." >&2
+            echo "yttranscript:       install via 'apt install typst' (Debian 13 trixie+ only) or" >&2
+            echo "yttranscript:       download the static binary from https://github.com/typst/typst/releases" >&2
         fi
         if ! command -v himalaya >/dev/null 2>&1; then
             echo "yttranscript: NOTE: 'himalaya' not found; --email will be unavailable." >&2
-            echo "yttranscript:       install it with 'apt install himalaya' (Debian 13+/Ubuntu 24.04+)." >&2
+            echo "yttranscript:       install via 'apt install himalaya' (Debian 13 trixie+ only) or" >&2
+            echo "yttranscript:       download the static binary from https://github.com/pimalaya/himalaya/releases" >&2
         fi
         ;;
     abort-upgrade|abort-remove|abort-deconfigure)

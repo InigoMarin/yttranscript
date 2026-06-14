@@ -562,10 +562,10 @@ The RFC 5322 message is piped to `himalaya message send` over stdin (required by
 - **yt-dlp** — declared as a pip dependency (installed with `pip install .`); if missing at runtime, auto-installed via pip with brew/apt fallback
 - **openai-whisper** — only needed for Whisper fallback, prompted before install (install upfront with `pip install ".[whisper]"`)
 - **pandoc** — required for PDF, EPUB, and DOCX export (`pacman -S pandoc` / `apt install pandoc` / https://pandoc.org/installing.html)
-- **typst** — additionally required for PDF export (`pacman -S typst` / `apt install typst`)
+- **typst** — additionally required for PDF export (`pacman -S typst` / `apt install typst` on Debian 13+ / `bash scripts/install-typst.sh` for a static binary on Ubuntu and other distros without the package)
 - **ffmpeg** — required by Whisper for audio processing (`pacman -S ffmpeg` / `apt install ffmpeg`)
 - **script** (BSD/Linux `util-linux`) — required by `--summarize` to capture command output via pseudo-terminal (not available on Windows)
-- **himalaya** — required only by `--email TO` (`pacman -S himalaya` / `cargo install himalaya` / https://lib.rs/crates/himalaya)
+- **himalaya** — required only by `--email TO` (`pacman -S himalaya` / `apt install himalaya` on Debian 13+ / `cargo install himalaya` / `bash scripts/install-himalaya.sh` for a static binary on Ubuntu and other distros without the package)
 
 ## How It Works
 
