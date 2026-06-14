@@ -718,36 +718,44 @@ def main() -> None:
         parser.error(f"not a YouTube URL: {args.url!r}")
 
     if args.group is not None:
-        config = load_config()
-        urls = resolve_channel_group(config, args.group)
-        all_sections: list[tuple[dict, str]] = []
-        for url in urls:
-            if not is_youtube_url(url):
-                warn(f"Skipping non-YouTube URL in group {args.group!r}: {url}")
-                continue
-            channel_name, videos = list_channel_videos(url, args.latest or 10)
-            if not videos:
-                warn(f"No videos found for {url}")
-                continue
-            info(f"Group {args.group!r}: transcribing {len(videos)} videos from {channel_name}")
-            batch_sections: list[tuple[dict, str]] = []
-            transcribe_batch(videos, args, channel_name=channel_name, sections_list=batch_sections)
-            all_sections.extend(batch_sections)
-        if args.merge:
-            fmt = resolve_value(args.format, config, "format")
-            if all_sections:
-                _do_merge(all_sections, args, fmt, args.group)
-            else:
-                warn(f"No videos to merge (all skipped or failed) for group {args.group!r}.")
+        try:
+            config = load_config()
+            urls = resolve_channel_group(config, args.group)
+            all_sections: list[tuple[dict, str]] = []
+            for url in urls:
+                if not is_youtube_url(url):
+                    warn(f"Skipping non-YouTube URL in group {args.group!r}: {url}")
+                    continue
+                channel_name, videos = list_channel_videos(url, args.latest or 10)
+                if not videos:
+                    warn(f"No videos found for {url}")
+                    continue
+                info(f"Group {args.group!r}: transcribing {len(videos)} videos from {channel_name}")
+                batch_sections: list[tuple[dict, str]] = []
+                transcribe_batch(videos, args, channel_name=channel_name, sections_list=batch_sections)
+                all_sections.extend(batch_sections)
+            if args.merge:
+                fmt = resolve_value(args.format, config, "format")
+                if all_sections:
+                    _do_merge(all_sections, args, fmt, args.group)
+                else:
+                    warn(f"No videos to merge (all skipped or failed) for group {args.group!r}.")
+        except TranscriptError as e:
+            error(str(e))
+            sys.exit(1)
         return
 
     if args.latest is not None:
-        channel_name, videos = list_channel_videos(args.url, args.latest)
-        if not args.transcribe:
-            return
-        if args.list_subs:
-            parser.error("--list-subs cannot be used with --latest --transcribe")
-        transcribe_batch(videos, args, channel_name=channel_name)
+        try:
+            channel_name, videos = list_channel_videos(args.url, args.latest)
+            if not args.transcribe:
+                return
+            if args.list_subs:
+                parser.error("--list-subs cannot be used with --latest --transcribe")
+            transcribe_batch(videos, args, channel_name=channel_name)
+        except TranscriptError as e:
+            error(str(e))
+            sys.exit(1)
         return
 
     config = load_config()

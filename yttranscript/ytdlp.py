@@ -207,7 +207,11 @@ def resolve_channel_videos(url: str, limit: int = 10) -> tuple[str, list[tuple[s
     """Resolve a channel URL and return its latest videos.
 
     Returns a tuple of (channel_name, [(date_str, video_id, title), ...]).
+
+    Calls ensure_yt_dlp() first so that channel resolution (which may run
+    from the CLI before process_video()) auto-installs yt-dlp when missing.
     """
+    ensure_yt_dlp()
     info(f"Resolving channel from: {url}")
     result = run(
         ["yt-dlp", "--print", "%(channel_id)s|%(channel)s", "--playlist-items", "1", url],

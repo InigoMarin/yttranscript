@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.16.5] - 2026-06-14
+
+### Fixed
+- `--latest` and `--group` no longer crash with `FileNotFoundError` when `yt-dlp` is not installed. `resolve_channel_videos()` now calls `ensure_yt_dlp()` before invoking yt-dlp, so the runtime auto-install (pipx → pip → apt) fires on these paths just as it already did for single-video processing.
+- The `--latest` and `--group` CLI branches are now wrapped in `try/except TranscriptError`, so install or resolution failures surface as clean error messages instead of raw Python tracebacks.
+
 ## [2.16.4] - 2026-06-14
 
 ### Changed
