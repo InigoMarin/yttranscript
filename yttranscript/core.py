@@ -273,8 +273,11 @@ def process_video(
     summarize_api_url: Optional[str] = None,
     summarize_api_model: Optional[str] = None,
     summarize_api_key: Optional[str] = None,
-) -> Optional[tuple[str, Optional[str], dict]]:
-    """Main processing pipeline. Returns (video_title, summary_markdown, video_info) or None.
+) -> Optional[tuple[str, Optional[str], dict, Optional[Path]]]:
+    """Main processing pipeline. Returns (video_title, summary_markdown, video_info, output_path) or None.
+
+    `output_path` is the absolute path to the rendered transcript file, or None
+    when no file was produced (e.g. --stdout, --no-save, or --list-subs).
 
     `work_dir`: directory for intermediate files (subtitle/audio/VTT). Defaults
         to a private TemporaryDirectory, so the user's CWD is no longer polluted
@@ -392,14 +395,14 @@ def process_video(
                                 out = final_output_dir / f"{safe_title}.txt"
                                 out.write_text(full_text, encoding="utf-8")
                             success(f"Saved: {out}")
-                            return (video_title, summary, video_info.to_dict())
+                            return (video_title, summary, video_info.to_dict(), out)
                         elif fmt == "txt":
                             info("Found in cache — skipping download.")
                             out = final_output_dir / f"{video_title}.txt"
                             final_output_dir.mkdir(parents=True, exist_ok=True)
                             out.write_text(content, encoding="utf-8")
                             success(f"Saved (cached): {out}")
-                            return (video_title, None, video_info.to_dict())
+                            return (video_title, None, video_info.to_dict(), out)
 
             # Intermediate files go into work_path (absolute paths so subprocesses
             # write there regardless of the process CWD; thread-safe under the web
@@ -440,7 +443,7 @@ def process_video(
                                 cache_text = extract_vtt_plain_text(final_vtt)
                             except Exception:
                                 pass
-                        _, summary_md = _render_output(
+                        out_path, summary_md = _render_output(
                             final_vtt,
                             video_info.to_dict(),
                             fmt, stdout_mode, timestamps, chunk_size,
@@ -452,7 +455,7 @@ def process_video(
                             summarize_api_key=summarize_api_key,
                         )
                         _maybe_cache(url, video_title, video_info.to_dict(), metadata, lang, "subtitles", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text)
-                        return (video_title, summary_md, video_info.to_dict())
+                        return (video_title, summary_md, video_info.to_dict(), out_path)
 
                 warn("No subtitles available.")
             else:
@@ -482,7 +485,7 @@ def process_video(
                         cache_text = extract_vtt_plain_text(vtt_file)
                     except Exception:
                         pass
-                _, summary_md = _render_output(
+                out_path, summary_md = _render_output(
                     vtt_file,
                     video_info.to_dict(),
                     fmt, stdout_mode, timestamps, chunk_size,
@@ -494,9 +497,9 @@ def process_video(
                     summarize_api_key=summarize_api_key,
                 )
                 _maybe_cache(url, video_title, video_info.to_dict(), metadata, lang, "whisper", fmt, stdout_mode, use_cache, final_output_dir, content=cache_text)
-                return (video_title, summary_md, video_info.to_dict())
+                return (video_title, summary_md, video_info.to_dict(), out_path)
 
-        return (video_title, None, video_info.to_dict())
+        return (video_title, None, video_info.to_dict(), None)
     finally:
         if work_ctx is not None:
             work_ctx.cleanup()

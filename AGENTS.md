@@ -58,6 +58,7 @@ Single Python package (`yttranscript/`) with entrypoint `yttranscript:main` (als
 - `vtt.py` — VTT parsing and format conversion
 - `whisper.py` — Whisper transcription fallback
 - `summarize.py` — summarization backends: `cmd` (pipes transcript to external AI command via `script(1)` pseudo-terminal, BSD/Linux only) and `api` (POSTs to an OpenAI-compatible HTTP endpoint via stdlib `urllib`). Dispatcher `summarize()` selects by `backend`. `list_models()` + `derive_models_url()` power `--summarize-api-list-models`.
+- `mail.py` — `--email TO` adapter: builds a MIME message (text body + attachment) and pipes it to `himalaya message send -f <eml>`. Validates recipient, raises `EmailError` (subclass of `TranscriptError`) if himalaya is missing.
 - `config.py` — XDG config loading (`~/.config/yttranscript/config.toml`)
 - `web.py` — local web UI (HTTP server with SSE streaming)
 - `pdf.py` — PDF/EPUB/DOCX export via Pandoc + Typst
@@ -81,3 +82,4 @@ Package data bundled: `web_ui.html`, `templates/*.typ`.
 - PDF export requires external `pandoc` + `typst` installed on the system
 - Whisper requires `ffmpeg` and is an optional dependency (`pip install ".[whisper]"`)
 - `yt-dlp` auto-installs itself at runtime if missing (pip → brew/apt fallback), so missing `yt-dlp` is not an error condition in the code
+- `--email TO` requires `himalaya` to be installed and configured separately (no auto-install); used only when the flag is passed

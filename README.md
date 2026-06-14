@@ -16,6 +16,7 @@ Export to **txt**, **VTT**, **SRT**, **JSON** (chunked for RAG), **PDF**, **EPUB
 - Local web UI with real-time SSE progress streaming
 - **SQLite cache**: transcripts are cached locally — re-running the same URL is instant
 - XDG-compliant config file (`~/.config/yttranscript/config.toml`)
+- `--email TO` sends the generated transcript as an attachment (via [himalaya](https://lib.rs/crates/himalaya))
 - Zero config needed — sensible defaults, auto-installs yt-dlp
 
 ## Install
@@ -460,6 +461,23 @@ Features:
 - DNS-rebinding protection (`Host` header must be `localhost` / `127.0.0.1`)
 - Concurrency limit (max 2 simultaneous transcriptions to prevent resource exhaustion)
 
+## Email output
+
+Send the generated transcript as an email attachment using [himalaya](https://lib.rs/crates/himalaya) (must be installed and configured separately):
+
+```bash
+# Send a PDF to a single recipient
+yttranscript URL --format pdf --email friend@example.com
+
+# Send an EPUB to a Kindle address
+yttranscript URL --format epub --email name@kindle.com
+
+# Batch: send the merged PDF (per-video emails are blocked to avoid spam)
+yttranscript URL --latest 5 --transcribe --summarize --merge --email me@example.com
+```
+
+The email subject is the file name and the body contains the video metadata (title, channel, URL, language, duration, upload date). `--email` validates the recipient address and fails fast with a clear error if `himalaya` is not in `$PATH`.
+
 ## Environment Variables
 
 | Variable | Effect |
@@ -478,6 +496,7 @@ Features:
 - **typst** — additionally required for PDF export (`pacman -S typst` / `apt install typst`)
 - **ffmpeg** — required by Whisper for audio processing (`pacman -S ffmpeg` / `apt install ffmpeg`)
 - **script** (BSD/Linux `util-linux`) — required by `--summarize` to capture command output via pseudo-terminal (not available on Windows)
+- **himalaya** — required only by `--email TO` (`pacman -S himalaya` / `cargo install himalaya` / https://lib.rs/crates/himalaya)
 
 ## How It Works
 
