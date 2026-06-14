@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -13,6 +12,7 @@ from yttranscript.mail import (
     _build_mime,
     _guess_content_type,
     format_body,
+    resolve_sender,
     send_email,
     validate_email,
 )
@@ -131,8 +131,13 @@ def test_build_mime_pdf_uses_pdf_mime(tmp_path):
 
 # --- send_email -----------------------------------------------------------
 
+_SENDER = "Test Sender <test@example.com>"
+
+
 def _cp(returncode=0, stderr=""):
-    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout="", stderr=stderr)
+    return subprocess.CompletedProcess(
+        args=[], returncode=returncode, stdout=b"", stderr=stderr.encode() if isinstance(stderr, str) else stderr
+    )
 
 
 def test_send_email_invokes_himalaya_with_message_send(tmp_path):
@@ -140,6 +145,7 @@ def test_send_email_invokes_himalaya_with_message_send(tmp_path):
     att.write_text("hello")
 
     with patch("yttranscript.mail.shutil.which", return_value="/usr/bin/himalaya"), \
+         patch("yttranscript.mail.resolve_sender", return_value=_SENDER), \
          patch("yttranscript.mail.subprocess.run", return_value=_cp(0)) as mock_run:
         send_email(
             to="user@example.com",
@@ -147,14 +153,15 @@ def test_send_email_invokes_himalaya_with_message_send(tmp_path):
             body="body text",
             attachment=att,
         )
-    cmd = mock_run.call_args[0][0]
-    assert cmd[0] == "himalaya"
-    assert cmd[1:3] == ["message", "send"]
-    # The 4th element is the positional path to the temp .eml file
-    eml_path = Path(cmd[3])
-    assert eml_path.suffix == ".eml"
-    # Temp file is cleaned up after send
-    assert not eml_path.exists()
+    args, kwargs = mock_run.call_args
+    cmd = args[0] if args else kwargs.get("args")
+    assert cmd == ["himalaya", "message", "send"]
+    # The MIME message is piped via stdin (bytes), not passed as a file path
+    mime_input = kwargs.get("input")
+    assert mime_input is not None
+    assert b"To: user@example.com" in mime_input
+    assert b"Subject: out.txt" in mime_input
+    assert b"test@example.com" in mime_input  # From header
 
 
 def test_send_email_raises_when_himalaya_missing(tmp_path):
@@ -186,6 +193,7 @@ def test_send_email_raises_on_himalala_nonzero(tmp_path):
     att = tmp_path / "out.txt"
     att.write_text("x")
     with patch("yttranscript.mail.shutil.which", return_value="/usr/bin/himalaya"), \
+         patch("yttranscript.mail.resolve_sender", return_value=_SENDER), \
          patch("yttranscript.mail.subprocess.run", return_value=_cp(1, stderr="smtp error")):
         with pytest.raises(EmailError, match="himalaya failed.*smtp error"):
             send_email("a@b.com", "subj", "body", att)
@@ -195,25 +203,83 @@ def test_send_email_raises_on_timeout(tmp_path):
     att = tmp_path / "out.txt"
     att.write_text("x")
     with patch("yttranscript.mail.shutil.which", return_value="/usr/bin/himalaya"), \
+         patch("yttranscript.mail.resolve_sender", return_value=_SENDER), \
          patch("yttranscript.mail.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["x"], timeout=1)):
         with pytest.raises(EmailError, match="timed out"):
             send_email("a@b.com", "subj", "body", att, timeout=0.01)
 
 
-def test_send_email_cleans_up_tempfile_even_on_failure(tmp_path):
+def test_send_email_does_not_pass_message_as_positional_arg(tmp_path):
+    """Regression: himalaya v1.2 ignores positional args when stdin is piped,
+    so the MIME must go through stdin — never as a CLI argument."""
     att = tmp_path / "out.txt"
     att.write_text("x")
-    captured_paths: list[str] = []
-
-    def fake_run(cmd, **kwargs):
-        # The 4th element is the temp .eml path (positional argument)
-        captured_paths.append(cmd[3])
-        return _cp(1, stderr="boom")
 
     with patch("yttranscript.mail.shutil.which", return_value="/usr/bin/himalaya"), \
-         patch("yttranscript.mail.subprocess.run", side_effect=fake_run):
-        with pytest.raises(EmailError):
-            send_email("a@b.com", "subj", "body", att)
+         patch("yttranscript.mail.resolve_sender", return_value=_SENDER), \
+         patch("yttranscript.mail.subprocess.run", return_value=_cp(0)) as mock_run:
+        send_email("a@b.com", "subj", "body", att)
 
-    # Even though send failed, the .eml temp file was removed
-    assert Path(captured_paths[0]).exists() is False
+    args, kwargs = mock_run.call_args
+    cmd = args[0] if args else kwargs.get("args")
+    assert len(cmd) == 3  # exactly ["himalaya", "message", "send"], no path
+
+
+# --- resolve_sender -------------------------------------------------------
+
+def _write_himalaya_config(path, accounts):
+    """Write a minimal himalaya config.toml with the given accounts dict."""
+    lines = []
+    for name, acc in accounts.items():
+        lines.append(f"[accounts.{name}]")
+        for k, v in acc.items():
+            if isinstance(v, bool):
+                lines.append(f"{k} = {str(v).lower()}")
+            elif isinstance(v, str):
+                lines.append(f'{k} = "{v}"')
+        lines.append("")
+    path.write_text("\n".join(lines))
+
+
+def test_resolve_sender_reads_default_account(tmp_path):
+    cfg = tmp_path / "config.toml"
+    _write_himalaya_config(cfg, {
+        "other": {"email": "other@example.com"},
+        "main": {"email": "me@example.com", "display-name": "Me", "default": True},
+    })
+    assert resolve_sender(cfg) == "Me <me@example.com>"
+
+
+def test_resolve_sender_falls_back_to_first_account(tmp_path):
+    cfg = tmp_path / "config.toml"
+    _write_himalaya_config(cfg, {
+        "only": {"email": "solo@example.com", "display-name": "Solo"},
+    })
+    assert resolve_sender(cfg) == "Solo <solo@example.com>"
+
+
+def test_resolve_sender_without_display_name(tmp_path):
+    cfg = tmp_path / "config.toml"
+    _write_himalaya_config(cfg, {
+        "acct": {"email": "plain@example.com"},
+    })
+    assert resolve_sender(cfg) == "plain@example.com"
+
+
+def test_resolve_sender_raises_on_missing_config(tmp_path):
+    with pytest.raises(EmailError, match="config not found"):
+        resolve_sender(tmp_path / "nope.toml")
+
+
+def test_resolve_sender_raises_on_missing_email(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[accounts.x]\ndisplay-name = "No Email"\n')
+    with pytest.raises(EmailError, match="no 'email' field"):
+        resolve_sender(cfg)
+
+
+def test_resolve_sender_raises_on_no_accounts(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[other]\nkey = "val"\n')
+    with pytest.raises(EmailError, match="No accounts"):
+        resolve_sender(cfg)

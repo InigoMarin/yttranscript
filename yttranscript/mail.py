@@ -7,12 +7,20 @@ user's pre-configured himalaya account.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
-import tempfile
 from email.message import EmailMessage
 from pathlib import Path
+
+try:
+    import tomllib
+except ImportError:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        tomllib = None
 
 from .log import debug, info
 from .util import TranscriptError, format_duration
@@ -67,17 +75,78 @@ def format_body(video_info: dict) -> str:
     return "\n".join(lines)
 
 
+def resolve_sender(config_path: Path | None = None) -> str:
+    """Resolve the sender address from the himalaya config.
+
+    Returns a formatted ``From`` value like ``"Name <user@example.com>"``.
+    Raises EmailError if the config cannot be read or no email is found.
+    """
+    if tomllib is None:
+        raise EmailError(
+            "Cannot read himalaya config: no TOML parser available "
+            "(install 'tomli' or use Python 3.11+)."
+        )
+
+    if config_path is None:
+        # Honor $HIMALAYA_CONFIG (colon-separated, first entry wins), then
+        # fall back to the XDG default.
+        env = os.environ.get("HIMALAYA_CONFIG", "")
+        if env:
+            config_path = Path(env.split(":")[0])
+        else:
+            xdg = os.environ.get("XDG_CONFIG_HOME")
+            base = Path(xdg) if xdg else Path.home() / ".config"
+            config_path = base / "himalaya" / "config.toml"
+
+    if not config_path.exists():
+        raise EmailError(
+            f"himalaya config not found at {config_path}. "
+            "Cannot determine sender address for --email."
+        )
+
+    try:
+        with open(config_path, "rb") as f:
+            config = tomllib.load(f)
+    except Exception as exc:
+        raise EmailError(
+            f"Cannot parse himalaya config {config_path}: {exc}"
+        ) from exc
+
+    accounts = config.get("accounts") or {}
+    if not accounts:
+        raise EmailError(
+            f"No accounts defined in himalaya config {config_path}."
+        )
+
+    # Prefer the account marked as default; fall back to the first one.
+    account = next(
+        (a for a in accounts.values() if a.get("default")),
+        next(iter(accounts.values())),
+    )
+
+    email = account.get("email")
+    if not email:
+        raise EmailError(
+            f"himalaya account in {config_path} has no 'email' field."
+        )
+
+    display_name = account.get("display-name")
+    return f"{display_name} <{email}>" if display_name else email
+
+
 def _build_mime(
     to: str,
     subject: str,
     body: str,
     attachment: Path,
+    sender: str | None = None,
 ) -> bytes:
     """Construct a MIME message with `body` as text + `attachment` as file."""
     msg = EmailMessage()
     msg["To"] = to
+    if sender:
+        msg["From"] = sender
     msg["Subject"] = subject
-    # From: leave unset; himalaya fills it from the configured account.
     msg.set_content(body)
 
     ctype = _guess_content_type(attachment)
@@ -131,33 +200,30 @@ def send_email(
     if not attachment.exists():
         raise EmailError(f"Attachment not found: {attachment}")
 
-    mime_bytes = _build_mime(to, subject, body, attachment)
+    sender = resolve_sender()
+    debug(f"From: {sender}")
+    mime_bytes = _build_mime(to, subject, body, attachment, sender=sender)
 
-    # Write to a temp file so the user's CWD is not polluted. himalaya reads
-    # the full RFC 5322 message via -- (stdin) or -f <path>; -f is cleaner.
-    with tempfile.NamedTemporaryFile(
-        prefix="yttranscript_mail_", suffix=".eml", delete=False
-    ) as tmp:
-        tmp.write(mime_bytes)
-        tmp_path = Path(tmp.name)
-
+    # himalaya's `message send` reads the raw RFC 5322 message from stdin
+    # when stdin is not a TTY (always the case under subprocess.run). The
+    # positional [MESSAGE]... argument is treated as inline message *content*,
+    # not a path — so we must pipe the MIME bytes via stdin.
+    cmd = [himalaya_bin, "message", "send"]
+    debug(f"$ {' '.join(cmd)}  # RFC 5322 message piped via stdin")
+    info(f"Sending email to {to} ({attachment.name}, "
+         f"{attachment.stat().st_size // 1024} KB)...")
     try:
-        # himalaya v1.2 takes the raw message path as a positional argument
-        # (`himalaya message send [OPTIONS] [MESSAGE]...`). Earlier versions
-        # also accepted a positional path; the deprecated `-f` flag was removed.
-        cmd = [himalaya_bin, "message", "send", str(tmp_path)]
-        debug(f"$ {' '.join(cmd[:3])} <eml>")
-        info(f"Sending email to {to} ({attachment.name}, "
-             f"{attachment.stat().st_size // 1024} KB)...")
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout, check=False
+            cmd,
+            input=mime_bytes,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
         )
         if result.returncode != 0:
-            stderr = (result.stderr or "").strip()
+            stderr = (result.stderr or b"").decode("utf-8", errors="replace").strip()
             raise EmailError(
                 f"himalaya failed (exit {result.returncode}): {stderr or 'no output'}"
             )
     except subprocess.TimeoutExpired as e:
         raise EmailError(f"himalaya timed out after {timeout}s") from e
-    finally:
-        tmp_path.unlink(missing_ok=True)

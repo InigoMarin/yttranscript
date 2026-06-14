@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.16.0] - 2026-06-14
+
+### Added
+- `resolve_sender()` reads the sender (`From`) from the himalaya config: the account marked `default = true` (or the first account), combining `display-name` + `email` into `Name <email>`. Honors `$HIMALAYA_CONFIG` (colon-separated, first entry wins) and the XDG default `$XDG_CONFIG_HOME/himalaya/config.toml`. Fails with a clear `EmailError` if the config is missing, has no accounts, or the account lacks an `email` field.
+- `_build_mime()` accepts a `sender` and sets the `From` header explicitly (previously left unset for himalaya to fill).
+
+### Changed
+- `send_email` now pipes the RFC 5322 message to `himalaya message send` over stdin instead of passing a temp `.eml` path as a positional argument. This is required by himalaya v1.2+, which treats positional args as inline message content (not paths) and dropped the `-f` flag. The temp file lifecycle is gone.
+- README "Email output" section documents sender resolution and the stdin piping behavior.
+
 ## [2.15.0] - 2026-06-14
 
 ### Added

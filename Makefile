@@ -1,6 +1,6 @@
 .PHONY: all pkg deb install deb-install clean rebuild test test-cov lint help
 
-VERSION := 2.15.0
+VERSION := 2.16.0
 PKGNAME := yttranscript
 TARBALL := $(PKGNAME)-$(VERSION).tar.gz
 SRC_DIR := $(PKGNAME)-$(VERSION)

@@ -478,6 +478,10 @@ yttranscript URL --latest 5 --transcribe --summarize --merge --email me@example.
 
 The email subject is the file name and the body contains the video metadata (title, channel, URL, language, duration, upload date). `--email` validates the recipient address and fails fast with a clear error if `himalaya` is not in `$PATH`.
 
+The **sender** (`From`) is resolved from your himalaya config: yttranscript reads the account marked `default = true` (or the first account if none is marked), combining its `display-name` and `email` into a `Name <email@example.com>` header. The config is located via `$HIMALAYA_CONFIG` (colon-separated, first entry wins) or the XDG default `$XDG_CONFIG_HOME/himalaya/config.toml` (`~/.config/himalaya/config.toml`). If the config is missing, has no accounts, or the account lacks an `email` field, `--email` fails with a clear error.
+
+The RFC 5322 message is piped to `himalaya message send` over stdin (required by himalaya v1.2+, which no longer accepts a positional message path).
+
 ## Environment Variables
 
 | Variable | Effect |
