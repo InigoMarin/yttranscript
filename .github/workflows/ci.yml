@@ -66,11 +66,14 @@ jobs:
       - name: Verify .deb
         run: |
           set -e
-          DEB="../$(ls ../yttranscript_*.deb | head -n1)"
+          # dpkg-buildpackage writes the .deb to the parent of the source dir
+          ls -la ../*.deb
+          DEB="$(ls ../yttranscript_*.deb | head -n1)"
           echo "Built: $DEB"
           dpkg-deb -I "$DEB"
           dpkg-deb -c "$DEB" | head -n 20
-          # Try installing into a throwaway chroot-like check
+          # Extract and verify the entry point was wired by pybuild
+          rm -rf /tmp/yttranscript-extract
           dpkg-deb -x "$DEB" /tmp/yttranscript-extract
           test -x /tmp/yttranscript-extract/usr/bin/yttranscript
           echo "Entry point /usr/bin/yttranscript present"
@@ -79,4 +82,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: yttranscript-deb
-          path: ../yttranscript_*.deb
+          path: |
+            ../*.deb
