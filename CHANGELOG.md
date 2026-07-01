@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.17.1] - 2026-07-01
+
+### Added
+- **Diagnostic for the YouTube "n challenge" failure** (the most common cause of *every video failing the same way* on a fresh VPS install). When `process_video()` detects the signature pattern — metadata fell back to defaults (`title='transcript'`/`'unknown'`, `duration=0`, `size=0`) **and** no subtitles were downloaded — it now prints a multi-line `EJS_HINT` after the regular "No subtitles available" warning, explaining that this is a missing-solver issue (not an IP block) and listing the three fix steps: install Node ≥ 22, `pipx install --force "yt-dlp[default]"`, and set `ytdlp_args = ["--js-runtimes", "node"]` in `config.toml`. New helpers: `yttranscript.ytdlp.looks_like_unsolved_n_challenge()` and `EJS_HINT` constant.
+- README: new **"YouTube 'n challenge' / EJS"** subsection under the VPS deployment guide, with the symptom (`[youtube] VIDEO_ID: n challenge solving failed`), the root cause (yt-dlp's move to external JS solvers), and a verified one-time fix.
+
+### Changed
+- The VPS troubleshooting table now leads with "stale yt-dlp / missing EJS" before IP-block advice, reflecting real-world frequency.
+
 ## [2.17.0] - 2026-07-01
 
 ### Added

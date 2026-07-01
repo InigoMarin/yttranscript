@@ -683,3 +683,39 @@ def test_calls_omit_network_args_when_none():
         get_video_metadata("u")
     cmd = _capture_cmd(m)
     assert cmd == ["yt-dlp", "-j", "-f", "bestaudio", "u"]
+
+
+# --- n-challenge / EJS diagnosis ------------------------------------------
+
+def test_n_challenge_fallback_metadata_pattern_detected():
+    """The signature of an unsolved nsig: default title, no duration/size."""
+    from yttranscript.ytdlp import looks_like_unsolved_n_challenge
+    assert looks_like_unsolved_n_challenge(
+        {"title": "transcript", "duration": 0, "size": 0}) is True
+    assert looks_like_unsolved_n_challenge(
+        {"title": "unknown", "duration": 0, "size": 0}) is True
+
+
+def test_n_challenge_real_metadata_not_flagged():
+    """A real metadata dict must NOT trigger the EJS hint."""
+    from yttranscript.ytdlp import looks_like_unsolved_n_challenge
+    assert looks_like_unsolved_n_challenge(
+        {"title": "My Video", "duration": 120, "size": 5000000}) is False
+    # Even just having a non-zero duration disqualifies it.
+    assert looks_like_unsolved_n_challenge(
+        {"title": "unknown", "duration": 60, "size": 0}) is False
+
+
+@pytest.mark.parametrize("meta", [None, {}, {"title": ""}])
+def test_n_challenge_empty_or_missing_metadata(meta):
+    from yttranscript.ytdlp import looks_like_unsolved_n_challenge
+    assert looks_like_unsolved_n_challenge(meta) is False
+
+
+def test_ejs_hint_contains_actionable_steps():
+    """The hint must mention the three fix steps and the wiki URL."""
+    from yttranscript.ytdlp import EJS_HINT
+    assert "yt-dlp[default]" in EJS_HINT        # step 2: install EJS
+    assert "--js-runtimes" in EJS_HINT          # step 3: enable runtime
+    assert "nodejs" in EJS_HINT                 # step 1: install Node
+    assert "https://github.com/yt-dlp/yt-dlp/wiki/EJS" in EJS_HINT

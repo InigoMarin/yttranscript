@@ -481,6 +481,50 @@ def test_process_video_whisper_fallback_failure(mock_pipeline, tmp_path):
         process_video(VTT_URL, work_dir=str(tmp_path), output_dir=str(tmp_path))
 
 
+def test_process_video_prints_ejs_hint_on_n_challenge_pattern(mock_pipeline, tmp_path):
+    """When metadata fell back to defaults AND no subtitles, print the EJS hint.
+
+    This is the signature of an unsolved YouTube nsig challenge (missing
+    yt-dlp-ejs / wrong --js-runtimes), not an IP block. The user needs to
+    see the actionable fix steps rather than just 'no subtitles'.
+    """
+    from yttranscript.ytdlp import EJS_HINT
+    mock_pipeline["try_sub"].return_value = False
+    mock_pipeline["whisper"].return_value = False
+    mock_pipeline["get_metadata"].return_value = {
+        "title": "transcript",
+        "sanitized_title": "transcript",
+        "duration": 0,
+        "size": 0,
+        "language": None,
+        "channel": "",
+        "upload_date": "",
+        "is_live": False,
+    }
+    with patch("yttranscript.core.warn") as m_warn:
+        with pytest.raises(TranscriptError):
+            process_video(VTT_URL, work_dir=str(tmp_path), output_dir=str(tmp_path))
+    # EJS_HINT must have been passed to warn() at least once.
+    hint_calls = [c for c in m_warn.call_args_list if c.args and c.args[0] == EJS_HINT]
+    assert hint_calls, "EJS_HINT was not printed on the n-challenge pattern"
+
+
+def test_process_video_no_ejs_hint_when_metadata_real(mock_pipeline, tmp_path):
+    """Real metadata (non-zero duration) must NOT trigger the EJS hint.
+
+    Otherwise every genuine 'video without subtitles' would spam the hint.
+    """
+    mock_pipeline["try_sub"].return_value = False
+    mock_pipeline["whisper"].return_value = False
+    # Fixture default: duration=60, size=1000000 → real metadata.
+    with patch("yttranscript.core.warn") as m_warn:
+        with pytest.raises(TranscriptError):
+            process_video(VTT_URL, work_dir=str(tmp_path), output_dir=str(tmp_path))
+    from yttranscript.ytdlp import EJS_HINT
+    hint_calls = [c for c in m_warn.call_args_list if c.args and c.args[0] == EJS_HINT]
+    assert not hint_calls, "EJS_HINT leaked into a non-EJS failure path"
+
+
 def test_process_video_force_whisper(mock_pipeline, tmp_path):
     """--whisper skips subtitle download entirely."""
     work = tmp_path / "work"

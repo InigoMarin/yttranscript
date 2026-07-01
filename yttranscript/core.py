@@ -32,6 +32,8 @@ from .ytdlp import (
     get_lang_variants,
     NetworkOpts,
     NO_NETWORK,
+    EJS_HINT,
+    looks_like_unsolved_n_challenge,
 )
 from . import db as cache_db
 
@@ -462,6 +464,13 @@ def process_video(
                         return (video_title, summary_md, video_info.to_dict(), out_path)
 
                 warn("No subtitles available.")
+
+                # Diagnose the most common cause of "metadata empty + no
+                # subs on every video": an unsolved YouTube n challenge
+                # (missing yt-dlp-ejs / wrong --js-runtimes). Independent
+                # of datacenter-IP blocking; see README's VPS section.
+                if looks_like_unsolved_n_challenge(metadata):
+                    warn(EJS_HINT)
             else:
                 warn("Forcing Whisper transcription (--whisper flag).")
 

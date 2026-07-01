@@ -457,6 +457,79 @@ stale `yt-dlp` is by far the most common cause of failures:
 pipx upgrade yt-dlp
 ```
 
+#### YouTube "n challenge" / EJS (yt-dlp can't solve JavaScript challenges)
+
+**Symptom:** every video fails the same way, no matter the IP / cookies / proxy:
+
+```
+› Fetching video metadata...
+✓ Video: transcript          ← fell back to default title
+› Trying subtitles (es.*)...
+⚠ No subtitles available.
+```
+
+Running `yttranscript -v URL` reveals the root cause in the yt-dlp output:
+
+```
+WARNING: [youtube] VIDEO_ID: n challenge solving failed:
+         Some formats may be missing. Ensure you have a supported JavaScript
+         runtime and challenge solver script distribution installed.
+WARNING: Only images are available for download.
+```
+
+**Why:** since early 2025, yt-dlp delegates the YouTube *nsig* challenge to an
+external JavaScript runtime + a companion package called **EJS**
+(`yt-dlp-ejs`). A bare `pip install yt-dlp` does **not** include EJS, and
+without it every YouTube URL degrades to "metadata only / images only" —
+exactly the pattern above. This is independent of datacenter-IP blocking:
+the request reaches YouTube, but the response can't be decoded.
+
+**Fix (one-time setup on the VPS):**
+
+1. Install a supported JavaScript runtime — Node ≥ 22, Deno ≥ 2.3, Bun, or QuickJS:
+
+   ```bash
+   # Debian/Ubuntu
+   sudo apt install -y nodejs
+   node --version  # must be >= 22.0.0
+   ```
+
+2. Install yt-dlp **with the `default` extra** so `yt-dlp-ejs` ships alongside:
+
+   ```bash
+   pipx install "yt-dlp[default]"
+   # or, if already installed:
+   pipx install --force "yt-dlp[default]"
+   ```
+
+   Verify EJS is present:
+
+   ```bash
+   pipx runpip yt-dlp show yt-dlp-ejs
+   # → Name: yt-dlp-ejs, Version: 0.x.x
+   ```
+
+3. Tell yt-dlp which runtime to use. Node is **not** the default (Deno is), so
+   pass `--js-runtimes node`. The clean way is to put it in `config.toml`
+   alongside the other anti-block keys:
+
+   ```toml
+   # ~/.config/yttranscript/config.toml
+   ytdlp_args = ["--js-runtimes", "node"]
+   ```
+
+   (Or, if you prefer, write it to yt-dlp's own config at
+   `~/.config/yt-dlp/config` as `--js-runtimes node`.)
+
+**Verify** with a direct yt-dlp invocation — you should see
+`[jsc:node] Solving JS challenges using node` in the output:
+
+```bash
+yt-dlp --js-runtimes node --skip-download --write-auto-sub --sub-lang es URL
+```
+
+Reference: <https://github.com/yt-dlp/yt-dlp/wiki/EJS>
+
 ## Summarization with AI
 
 yttranscript supports two summarization backends, selected via `summarize_backend`:

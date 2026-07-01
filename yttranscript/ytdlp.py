@@ -76,6 +76,49 @@ class NetworkOpts:
 NO_NETWORK = NetworkOpts()
 
 
+# Hint shown when yt-dlp can't solve YouTube's "n challenge" (a missing-EJS
+# problem, not an IP/network problem). Rendered as a multi-line warning when
+# the fallback metadata + no-subtitles pattern is detected. Keep the steps
+# in sync with README.md (section "VPS / datacenter deployment").
+EJS_HINT = (
+    "YouTube's 'n challenge' could not be solved. This is usually NOT a "
+    "network/IP issue — yt-dlp reached YouTube but couldn't decode the "
+    "player response because the external JavaScript solver is missing.\n"
+    "Fix (one-time setup):\n"
+    "  1. Install Node.js >= 22 (or Deno >= 2.3):\n"
+    "       sudo apt install -y nodejs\n"
+    "  2. Reinstall yt-dlp with the 'default' extra (ships yt-dlp-ejs):\n"
+    "       pipx install --force \"yt-dlp[default]\"\n"
+    "  3. Tell yt-dlp which JS runtime to use (Node is NOT the default):\n"
+    "       # in ~/.config/yttranscript/config.toml\n"
+    "       ytdlp_args = [\"--js-runtimes\", \"node\"]\n"
+    "Reference: https://github.com/yt-dlp/yt-dlp/wiki/EJS"
+)
+
+
+def looks_like_unsolved_n_challenge(metadata: dict) -> bool:
+    """Detect the symptom pattern of an unsolved YouTube nsig challenge.
+
+    When yt-dlp can't solve the nsig challenge, every video degrades to the
+    same fallback metadata (``title='unknown'`` or ``'transcript'`` with
+    ``duration=0`` and ``size=0``) because the player JSON never arrives.
+    Combined with 'no subtitles available' on a video that is known to have
+    captions, this is a strong signal that the user is hitting the EJS
+    issue rather than a genuinely subtitle-less video.
+
+    Used by ``core.process_video()`` to print ``EJS_HINT`` after the regular
+    'No subtitles available' warning, so the user knows the failure is
+    recoverable.
+    """
+    if not metadata:
+        return False
+    return (
+        metadata.get("title") in ("unknown", "transcript")
+        and not metadata.get("duration")
+        and not metadata.get("size")
+    )
+
+
 def ensure_yt_dlp() -> None:
     """Ensure yt-dlp is installed."""
     if command_exists("yt-dlp"):
