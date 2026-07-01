@@ -352,3 +352,55 @@ def test_custom_timeout_passed_to_subprocess(tmp_path):
 
 def test_default_timeout_is_whisper_timeout():
     assert WHISPER_TIMEOUT == 4 * 3600
+
+
+# --- network options propagation ------------------------------------------
+
+def test_audio_download_forwards_network_to_ytdlp(tmp_path):
+    """NetworkOpts are inserted into the yt-dlp audio-download argv."""
+    from yttranscript.ytdlp import NetworkOpts
+    video_info = {"duration": 60, "size": 0, "title": "T"}
+    captured_cmds = []
+
+    def fake_run(cmd, **kwargs):
+        if "yt-dlp" in cmd:
+            captured_cmds.append(list(cmd))
+            idx = cmd.index("--output")
+            Path(cmd[idx + 1].replace("%(ext)s", "mp3")).write_text("audio")
+        return _cp(0)
+
+    def fake_subprocess_run(cmd, **kwargs):
+        Path(cmd[1]).with_suffix(".vtt").write_text("WEBVTT\n")
+        return _cp(0)
+
+    with patch("yttranscript.whisper.ensure_whisper", return_value=True), \
+         patch("yttranscript.whisper.run", side_effect=fake_run), \
+         patch("yttranscript.whisper.subprocess.run", side_effect=fake_subprocess_run):
+        transcribe_with_whisper(
+            "url", "title", video_info=video_info, work_dir=tmp_path,
+            network=NetworkOpts(proxy="socks5://h:1080", force_ipv4=True),
+        )
+
+    ytdlp_cmds = [c for c in captured_cmds if "yt-dlp" in c]
+    assert len(ytdlp_cmds) == 1
+    cmd = ytdlp_cmds[0]
+    assert "--proxy" in cmd and "socks5://h:1080" in cmd
+    assert "--force-ipv4" in cmd
+    assert cmd[-1] == "url"  # URL stays last
+
+
+def test_whisper_fetches_info_with_network_when_video_info_missing(tmp_path):
+    """When video_info is None, get_video_info() must receive the same NetworkOpts."""
+    from yttranscript.ytdlp import NetworkOpts
+
+    with patch("yttranscript.whisper.ensure_whisper", return_value=False), \
+         patch("yttranscript.whisper.get_video_info") as m_info:
+        m_info.return_value = {"duration": 0, "size": 0, "title": "T",
+                               "channel": "", "upload_date": ""}
+        transcribe_with_whisper(
+            "url", "title",
+            network=NetworkOpts(proxy="socks5://x"),
+        )
+    m_info.assert_called_once()
+    assert m_info.call_args.kwargs.get("network") is not None
+    assert m_info.call_args.kwargs["network"].proxy == "socks5://x"

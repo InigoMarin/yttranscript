@@ -378,7 +378,7 @@ def mock_pipeline():
 def test_process_video_list_only(mock_pipeline):
     result = process_video(VTT_URL, list_only=True, output_dir="/tmp")
     assert result is None
-    mock_pipeline["list_subs"].assert_called_once_with(VTT_URL)
+    mock_pipeline["list_subs"].assert_called_once_with(VTT_URL, network=None)
 
 
 # --- subtitle download success --------------------------------------------

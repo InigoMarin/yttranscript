@@ -16,7 +16,7 @@ from .config import (
     resolve_channel_group,
 )
 from .util import is_youtube_url, is_valid_lang_code, sanitize_filename, TranscriptError, format_duration
-from .ytdlp import list_channel_videos
+from .ytdlp import list_channel_videos, NetworkOpts
 from .core import process_video
 from .pdf import markdown_to_merged, PANDOC_FORMATS
 from .web import run_server
@@ -279,6 +279,60 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show cache statistics.",
     )
+    # --- Network / anti-block options (VPS / datacenter-IP deployments) ---
+    network_group = parser.add_argument_group(
+        "network",
+        "Anti-block options forwarded to every yt-dlp invocation. "
+        "Useful on VPS where YouTube throttles datacenter IPs. "
+        "All have matching keys in config.toml.",
+    )
+    network_group.add_argument(
+        "--proxy",
+        default=None,
+        help="yt-dlp --proxy URL (e.g. socks5://127.0.0.1:1080, http://host:8080). "
+             "Default: config proxy.",
+    )
+    network_group.add_argument(
+        "--cookies",
+        default=None,
+        help="Path to a yt-dlp cookies.txt file (Netscape format). "
+             "Export from a logged-in YouTube session. Default: config cookies.",
+    )
+    network_group.add_argument(
+        "--cookies-from-browser",
+        default=None,
+        metavar="BROWSER",
+        help="Read cookies from BROWSER (firefox, chrome, chromium, brave, edge, "
+             "opera, vivaldi, safari). Default: config cookies_from_browser.",
+    )
+    network_group.add_argument(
+        "--force-ipv4",
+        action="store_true",
+        default=None,
+        help="Force yt-dlp to use IPv4 only (common OVH/Scaleway block cause: "
+             "shared IPv6 /64). Default: config force_ipv4.",
+    )
+    network_group.add_argument(
+        "--geo-bypass",
+        action="store_true",
+        default=None,
+        help="Bypass geographic restriction via yt-dlp's fake IP XFF header. "
+             "Default: config geo_bypass.",
+    )
+    network_group.add_argument(
+        "--extractor-args",
+        default=None,
+        metavar="KEY=VAL[:KEY2=VAL2]",
+        help="yt-dlp --extractor-args, e.g. 'youtube:player_client=-android'. "
+             "Default: config extractor_args.",
+    )
+    network_group.add_argument(
+        "--ytdlp-args",
+        default=None,
+        metavar="STR",
+        help="Extra yt-dlp arguments parsed with shell quoting "
+             "(e.g. '--sleep-requests 1 --retries 10'). Default: config ytdlp_args.",
+    )
     return parser
 
 
@@ -411,7 +465,35 @@ def _resolve_options(args, config: dict) -> dict:
         "whisper_device": resolve_value(args.whisper_device, config, "whisper_device"),
         "use_cache": use_cache,
         "skip_cached": use_cache and args.skip_cached,
+        "network": _resolve_network_opts(args, config),
     }
+
+
+def _resolve_network_opts(args, config: dict) -> NetworkOpts:
+    """Build NetworkOpts from CLI args + config (CLI wins).
+
+    `ytdlp_args` accepts either a shell-quoted string (CLI) or a TOML array
+    (config); both are merged into NetworkOpts.extra_args.
+    """
+    import shlex
+
+    # ytdlp_args: CLI string > config list > default [].
+    if args.ytdlp_args is not None:
+        extra_args = shlex.split(args.ytdlp_args)
+    else:
+        cfg_extra = config.get("ytdlp_args", DEFAULTS["ytdlp_args"]) or []
+        extra_args = list(cfg_extra)
+
+    opts = NetworkOpts(
+        proxy=resolve_value(args.proxy, config, "proxy"),
+        cookies=resolve_value(args.cookies, config, "cookies"),
+        cookies_from_browser=resolve_value(args.cookies_from_browser, config, "cookies_from_browser"),
+        force_ipv4=bool(resolve_value(args.force_ipv4, config, "force_ipv4") or False),
+        geo_bypass=bool(resolve_value(args.geo_bypass, config, "geo_bypass") or False),
+        extractor_args=resolve_value(args.extractor_args, config, "extractor_args"),
+        extra_args=extra_args,
+    )
+    return opts
 
 
 def _merge_output_path(args, fmt: str, default_name: str) -> Path:
@@ -522,6 +604,7 @@ def transcribe_batch(videos, args, channel_name: str = "", sections_list: list |
     whisper_device = opts["whisper_device"]
     use_cache = opts["use_cache"]
     skip_cached = opts["skip_cached"]
+    network = opts["network"]
 
     if args.merge and fmt not in PANDOC_FORMATS:
         from .log import error as _error
@@ -574,6 +657,7 @@ def transcribe_batch(videos, args, channel_name: str = "", sections_list: list |
                 use_cache=use_cache,
                 skip_cached=skip_cached,
                 no_save=args.merge,
+                network=network,
             )
             if result is None and skip_cached:
                 skipped += 1
@@ -721,12 +805,14 @@ def main() -> None:
         try:
             config = load_config()
             urls = resolve_channel_group(config, args.group)
+            # Resolve network opts once for the whole group run.
+            network = _resolve_network_opts(args, config)
             all_sections: list[tuple[dict, str]] = []
             for url in urls:
                 if not is_youtube_url(url):
                     warn(f"Skipping non-YouTube URL in group {args.group!r}: {url}")
                     continue
-                channel_name, videos = list_channel_videos(url, args.latest or 10)
+                channel_name, videos = list_channel_videos(url, args.latest or 10, network=network)
                 if not videos:
                     warn(f"No videos found for {url}")
                     continue
@@ -747,7 +833,8 @@ def main() -> None:
 
     if args.latest is not None:
         try:
-            channel_name, videos = list_channel_videos(args.url, args.latest)
+            network = _resolve_network_opts(args, _config)
+            channel_name, videos = list_channel_videos(args.url, args.latest, network=network)
             if not args.transcribe:
                 return
             if args.list_subs:
@@ -790,6 +877,7 @@ def main() -> None:
             output_dir=args.output_dir,
             use_cache=opts["use_cache"],
             skip_cached=opts["skip_cached"],
+            network=opts["network"],
         )
     except KeyboardInterrupt:
         print()

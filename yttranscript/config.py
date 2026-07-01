@@ -46,6 +46,14 @@ DEFAULTS = {
     "port": 8080,
     "output": None,
     "cache_enabled": True,
+    # Network / anti-block (VPS / datacenter-IP deployments). See NetworkOpts.
+    "proxy": None,
+    "cookies": None,
+    "cookies_from_browser": None,
+    "force_ipv4": False,
+    "geo_bypass": False,
+    "extractor_args": None,
+    "ytdlp_args": [],
 }
 
 # Keys not shown in --show-config / config template (CLI-only or runtime-only).
@@ -62,6 +70,10 @@ _CONFIG_EXAMPLES = {
     "summarize_api_model": "gpt-4o-mini",
     "summarize_api_key_env": "YTTRANSCRIPT_API_KEY",
     "whisper_dir": "/home/user/.cache/whisper",
+    "proxy": "socks5://127.0.0.1:1080",
+    "cookies": "~/.config/yt-dlp/cookies.txt",
+    "cookies_from_browser": "firefox",
+    "extractor_args": "youtube:player_client=-android",
 }
 
 
@@ -71,6 +83,8 @@ def _toml_value(val) -> str:
         return "true" if val else "false"
     if isinstance(val, (int, float)):
         return str(val)
+    if isinstance(val, (list, tuple)):
+        return "[" + ", ".join(_toml_value(v) for v in val) + "]"
     return f'"{val}"'
 
 

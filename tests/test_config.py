@@ -103,6 +103,38 @@ def test_toml_value_formatting():
     assert _toml_value("hello") == '"hello"'
 
 
+def test_toml_value_formats_lists():
+    assert _toml_value([]) == "[]"
+    assert _toml_value(["a", "b"]) == '["a", "b"]'
+    assert _toml_value([True, 1]) == "[true, 1]"
+
+
+# --- network / anti-block keys present ------------------------------------
+
+@pytest.mark.parametrize("key", [
+    "proxy", "cookies", "cookies_from_browser",
+    "force_ipv4", "geo_bypass", "extractor_args", "ytdlp_args",
+])
+def test_defaults_contain_network_key(key):
+    assert key in DEFAULTS
+
+
+def test_defaults_ytdlp_args_is_list():
+    assert isinstance(DEFAULTS["ytdlp_args"], list)
+    assert DEFAULTS["ytdlp_args"] == []
+
+
+def test_template_renders_ytdlp_args_as_toml_array():
+    tmpl = generate_config_template()
+    assert "# ytdlp_args = []" in tmpl
+
+
+def test_template_renders_force_ipv4_as_bool():
+    tmpl = generate_config_template()
+    assert "# force_ipv4 = false" in tmpl
+    assert "# geo_bypass = false" in tmpl
+
+
 # --- load_config robustness -----------------------------------------------
 
 def test_load_config_returns_empty_when_tomllib_missing(monkeypatch):

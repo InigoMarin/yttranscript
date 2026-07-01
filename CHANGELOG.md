@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.17.0] - 2026-07-01
+
+### Added
+- **Network / anti-block options** for VPS and datacenter deployments where YouTube throttles the IP (Hetzner, OVH, Scaleway, …). New CLI flags and matching `config.toml` keys are forwarded to every `yt-dlp` invocation (subtitle download and Whisper fallback alike):
+  - `--proxy URL` (socks5/http) — route through a proxy; **Cloudflare WARP** on `socks5://127.0.0.1:40000` is a free and effective option.
+  - `--cookies PATH` — Netscape cookies file exported from a logged-in YouTube session (most reliable bypass).
+  - `--cookies-from-browser BROWSER` — read cookies directly from a browser profile.
+  - `--force-ipv4` — addresses the shared IPv6 `/64` rate-limiting common on OVH/Scaleway.
+  - `--extractor-args 'youtube:player_client=-android'` — switch YouTube client (less-throttled ones: `-android`/`-ios`/`-tv`).
+  - `--geo-bypass` — fake the X-Forwarded-For IP.
+  - `--ytdlp-args '...'` — shell-quoted escape hatch appended verbatim (`--retries 10 --sleep-requests 1`, …). In `config.toml` accepts a TOML array: `ytdlp_args = ["--retries", "10"]`.
+- New `NetworkOpts` dataclass in `yttranscript.ytdlp` is the single rendering point for these options; all yt-dlp call sites (`get_video_metadata`, `get_video_info`, `list_subs`, `try_download_subtitle`, `resolve_channel_videos`, `list_channel_videos`, the verbose `--list-subs`, and the Whisper audio download) accept and forward it.
+- README: new **"VPS / datacenter deployment"** subsection under Configuration with a triage table and worked examples (force-ipv4 → cookies → WARP).
+
+### Changed
+- `yttranscript.config._toml_value` now renders lists as TOML arrays (so the generated template shows `ytdlp_args = []` correctly instead of a quoted string).
+
 ## [2.16.5] - 2026-06-14
 
 ### Fixed

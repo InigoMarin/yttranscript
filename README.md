@@ -330,6 +330,13 @@ Directory spec: `$XDG_CONFIG_HOME/yttranscript/config.toml` (defaults to
 # whisper_device = "gpu"
 # whisper_dir = "/home/user/.cache/whisper"
 # cache_enabled = true
+# proxy = "socks5://127.0.0.1:1080"
+# cookies = "~/.config/yt-dlp/cookies.txt"
+# cookies_from_browser = "firefox"
+# force_ipv4 = false
+# geo_bypass = false
+# extractor_args = "youtube:player_client=-android"
+# ytdlp_args = []
 ```
 
 Priority: **CLI flag** > **config file** > **hardcoded default**
@@ -388,6 +395,67 @@ yttranscript --show-config
 ```
 
 This displays all config values plus any channel groups you have defined.
+
+### VPS / datacenter deployment (YouTube bot-detection)
+
+YouTube often throttles or blocks requests coming from datacenter IPs
+(Hetzner, OVH, Scaleway, DigitalOcean, …) with errors like *"Sign in to
+confirm you're not a bot"* or HTTP 403/429. yttranscript exposes a set of
+flags that are forwarded to every `yt-dlp` invocation (both the subtitle
+download path and the Whisper fallback):
+
+| Flag | Maps to | When it helps |
+|------|---------|---------------|
+| `--force-ipv4` | `yt-dlp --force-ipv4` | OVH/Scaleway commonly ship a shared IPv6 `/64` that YouTube rate-limits aggressively. |
+| `--proxy URL` | `yt-dlp --proxy` | Route through SOCKS5/HTTP. **Cloudflare WARP** (`warp-cli`) on `socks5://127.0.0.1:40000` is free and very effective. |
+| `--cookies PATH` | `yt-dlp --cookies` | Use a Netscape cookies file exported from a logged-in YouTube session. Most reliable bypass. |
+| `--cookies-from-browser firefox` | `yt-dlp --cookies-from-browser` | Read cookies directly from a browser profile on the VPS. |
+| `--extractor-args 'youtube:player_client=-android'` | `yt-dlp --extractor-args` | Switch YouTube client. `-android`/`-ios`/`-tv` are less frequently throttled. |
+| `--geo-bypass` | `yt-dlp --geo-bypass` | Fake the X-Forwarded-For IP to bypass region locks. |
+| `--ytdlp-args '...'` | appended verbatim | Escape hatch for any other yt-dlp flag (`--retries 10`, `--sleep-requests 1`, …). |
+
+All flags have a matching key in `config.toml` (e.g. `proxy = "..."`) so you
+can set them once instead of on every run. They also accept a TOML array:
+
+```toml
+ytdlp_args = ["--retries", "10", "--sleep-requests", "1"]
+```
+
+**Recommended starting point** on a VPS:
+
+```bash
+yttranscript URL --force-ipv4 \
+    --extractor-args 'youtube:player_client=-android'
+```
+
+If that fails, add cookies from a logged-in session:
+
+```bash
+yttranscript URL --force-ipv4 --cookies ~/cookies.txt
+```
+
+If you can't (or won't) use a personal account, install **Cloudflare WARP**
+and route yt-dlp through it:
+
+```bash
+# one-time VPS setup
+curl -fsSL https://pkg.cloudflareclient.com/install | sudo bash
+sudo apt install -y cloudflare-warp
+warp-cli registration new
+warp-cli mode proxy   # listens on socks5://127.0.0.1:40000
+warp-cli connect
+
+# then make yttranscript use it (via config to avoid repeating the flag)
+# ~/.config/yttranscript/config.toml
+# proxy = "socks5://127.0.0.1:40000"
+```
+
+Keep `yt-dlp` up to date — YouTube changes its blocking almost weekly and a
+stale `yt-dlp` is by far the most common cause of failures:
+
+```bash
+pipx upgrade yt-dlp
+```
 
 ## Summarization with AI
 

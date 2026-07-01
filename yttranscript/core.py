@@ -30,6 +30,8 @@ from .ytdlp import (
     list_subs,
     try_download_subtitle,
     get_lang_variants,
+    NetworkOpts,
+    NO_NETWORK,
 )
 from . import db as cache_db
 
@@ -273,6 +275,7 @@ def process_video(
     summarize_api_url: Optional[str] = None,
     summarize_api_model: Optional[str] = None,
     summarize_api_key: Optional[str] = None,
+    network: Optional[NetworkOpts] = None,
 ) -> Optional[tuple[str, Optional[str], dict, Optional[Path]]]:
     """Main processing pipeline. Returns (video_title, summary_markdown, video_info, output_path) or None.
 
@@ -310,12 +313,12 @@ def process_video(
         # reassignment that raced across concurrent web server threads).
         with log_context(log_callback, stdout_mode=stdout_mode):
             if list_only:
-                list_subs(url)
+                list_subs(url, network=network)
                 return None
 
             # Single yt-dlp call for all metadata (language, title, duration, size)
             info("Fetching video metadata...")
-            metadata = get_video_metadata(url)
+            metadata = get_video_metadata(url, network=network)
 
             if metadata.get("is_live"):
                 raise TranscriptError(
@@ -413,7 +416,8 @@ def process_video(
                 # List available subs (only in verbose mode)
                 if log.VERBOSITY >= 2 and not stdout_mode:
                     info("Available subtitles:")
-                    run(["yt-dlp", "--list-subs", url], check=False)
+                    run(["yt-dlp", "--list-subs",
+                         *(network or NO_NETWORK).to_ytdlp_args(), url], check=False)
 
                 # Strategy: manual (lang variants → fallback) → auto (same) → whisper
                 lang_variants = get_lang_variants(lang)
@@ -425,7 +429,7 @@ def process_video(
                     info(f"Trying subtitles ({variant})...")
                     if try_download_subtitle(
                         url, temp_prefix, variant,
-                        work_dir=work_path, try_both=True,
+                        work_dir=work_path, try_both=True, network=network,
                     ):
                         downloaded = True
                         success("Subtitles downloaded!")
@@ -469,6 +473,7 @@ def process_video(
                 video_info=video_info.to_dict(),
                 work_dir=work_path,
                 keep_audio_dir=final_output_dir if keep_audio else None,
+                network=network,
             ):
                 raise TranscriptError(
                     "Could not get transcript. The video may not have subtitles "

@@ -551,3 +551,135 @@ def test_resolve_channel_videos_empty_fetch_exits():
          patch("yttranscript.ytdlp.run", side_effect=lambda *a, **kw: next(responses)):
         with pytest.raises(TranscriptError):
             resolve_channel_videos("u")
+
+
+# --- NetworkOpts ----------------------------------------------------------
+
+def test_network_opts_empty_renders_nothing():
+    from yttranscript.ytdlp import NetworkOpts, NO_NETWORK
+    assert NetworkOpts().to_ytdlp_args() == []
+    assert NO_NETWORK.to_ytdlp_args() == []
+    assert NetworkOpts().is_empty() is True
+
+
+@pytest.mark.parametrize("opts, expected_prefix", [
+    ({"proxy": "socks5://h:1080"}, ["--proxy", "socks5://h:1080"]),
+    ({"cookies": "/tmp/cookies.txt"}, ["--cookies", "/tmp/cookies.txt"]),
+    ({"cookies_from_browser": "firefox"},
+     ["--cookies-from-browser", "firefox"]),
+    ({"force_ipv4": True}, ["--force-ipv4"]),
+    ({"geo_bypass": True}, ["--geo-bypass"]),
+    ({"extractor_args": "youtube:player_client=-android"},
+     ["--extractor-args", "youtube:player_client=-android"]),
+    ({"extra_args": ["--retries", "10", "--no-progress"]},
+     ["--retries", "10", "--no-progress"]),
+])
+def test_network_opts_renders_each_field(opts, expected_prefix):
+    from yttranscript.ytdlp import NetworkOpts
+    assert NetworkOpts(**opts).to_ytdlp_args() == expected_prefix
+
+
+def test_network_opts_combines_all_fields():
+    from yttranscript.ytdlp import NetworkOpts
+    args = NetworkOpts(
+        proxy="http://p:8080",
+        cookies="/c.txt",
+        cookies_from_browser="chrome",
+        force_ipv4=True,
+        geo_bypass=True,
+        extractor_args="youtube:player_client=web",
+        extra_args=["--foo"],
+    ).to_ytdlp_args()
+    # Stable order regardless of dict construction.
+    assert args == [
+        "--proxy", "http://p:8080",
+        "--cookies", "/c.txt",
+        "--cookies-from-browser", "chrome",
+        "--force-ipv4",
+        "--geo-bypass",
+        "--extractor-args", "youtube:player_client=web",
+        "--foo",
+    ]
+
+
+def test_network_opts_is_empty_false_when_any_set():
+    from yttranscript.ytdlp import NetworkOpts
+    assert NetworkOpts(force_ipv4=True).is_empty() is False
+    assert NetworkOpts(extra_args=["--x"]).is_empty() is False
+
+
+# --- network propagation into yt-dlp calls --------------------------------
+
+def _capture_cmd(mock_run):
+    """Pull the first positional argv from the first call to `run`."""
+    return mock_run.call_args.args[0]
+
+
+def test_get_video_metadata_forwards_network():
+    from yttranscript.ytdlp import NetworkOpts
+    import json as _json
+    raw = _json.dumps({"title": "T", "duration": 0})
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, raw)) as m:
+        get_video_metadata("u", network=NetworkOpts(proxy="socks5://x"))
+    cmd = _capture_cmd(m)
+    assert "--proxy" in cmd and "socks5://x" in cmd
+    assert cmd[-1] == "u"  # URL stays last
+
+
+def test_list_subs_forwards_network(capsys):
+    from yttranscript.ytdlp import NetworkOpts
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "en\n")) as m:
+        list_subs("u", network=NetworkOpts(force_ipv4=True))
+    cmd = _capture_cmd(m)
+    assert "--force-ipv4" in cmd
+
+
+def test_get_video_info_forwards_network():
+    from yttranscript.ytdlp import NetworkOpts
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "0|0|T|C|20240101")) as m:
+        get_video_info("u", network=NetworkOpts(extractor_args="youtube:x=y"))
+    cmd = _capture_cmd(m)
+    assert "--extractor-args" in cmd and "youtube:x=y" in cmd
+
+
+def test_try_download_subtitle_forwards_network(tmp_path):
+    from yttranscript.ytdlp import NetworkOpts
+    prefix = str(tmp_path / "t")
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, "")) as m:
+        try_download_subtitle(
+            "u", prefix, "en", use_auto=False, work_dir=tmp_path,
+            network=NetworkOpts(proxy="socks5://h:1080", force_ipv4=True),
+        )
+    cmd = _capture_cmd(m)
+    assert "--proxy" in cmd and "socks5://h:1080" in cmd
+    assert "--force-ipv4" in cmd
+    # Network args must come AFTER the yt-dlp specific options but BEFORE URL.
+    assert cmd.index("--force-ipv4") < cmd.index("u")
+    assert cmd.index("--sub-langs") < cmd.index("--proxy")
+
+
+def test_resolve_channel_videos_forwards_network_to_both_calls():
+    from yttranscript.ytdlp import NetworkOpts
+    channel_raw = "UC12345678|My Channel\n"
+    videos_raw = "20240115|vid1|First Video\n"
+    responses = iter([_cp(0, channel_raw), _cp(0, videos_raw)])
+    with patch("yttranscript.ytdlp.ensure_yt_dlp"), \
+         patch("yttranscript.ytdlp.run",
+               side_effect=lambda *a, **kw: next(responses)) as m:
+        resolve_channel_videos(
+            "u", network=NetworkOpts(proxy="socks5://x"),
+        )
+    assert len(m.call_args_list) == 2
+    for call in m.call_args_list:
+        cmd = call.args[0]
+        assert "--proxy" in cmd and "socks5://x" in cmd
+
+
+def test_calls_omit_network_args_when_none():
+    """Backward-compat: no NetworkOpts → no extra argv."""
+    import json as _json
+    raw = _json.dumps({"title": "T"})
+    with patch("yttranscript.ytdlp.run", return_value=_cp(0, raw)) as m:
+        get_video_metadata("u")
+    cmd = _capture_cmd(m)
+    assert cmd == ["yt-dlp", "-j", "-f", "bestaudio", "u"]

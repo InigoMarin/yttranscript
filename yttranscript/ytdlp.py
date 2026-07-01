@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import subprocess
@@ -21,6 +22,58 @@ TIMEOUT_LIST_SUBS = 60.0    # --list-subs
 TIMEOUT_CHANNEL = 120.0     # --latest channel fetch
 TIMEOUT_AUDIO_DOWNLOAD = 1800.0  # 30 min for very long / high-bitrate audios
 TIMEOUT_PIP_INSTALL = 600.0  # openai-whisper is ~1-3 GB
+
+
+@dataclasses.dataclass
+class NetworkOpts:
+    """Network/anti-block options forwarded to every yt-dlp invocation.
+
+    Useful when running on a VPS whose datacenter IP YouTube throttles or
+    flags as a bot. Populate from CLI flags (``--proxy`` etc.) or from the
+    ``config.toml`` keys of the same name.
+
+    Fields map 1:1 to yt-dlp flags:
+        proxy                -> --proxy URL
+        cookies              -> --cookies PATH
+        cookies_from_browser -> --cookies-from-browser BROWSER
+        force_ipv4           -> --force-ipv4
+        geo_bypass           -> --geo-bypass
+        extractor_args       -> --extractor-args KEY=VAL
+        extra_args           -> passed verbatim (escape hatch)
+    """
+
+    proxy: Optional[str] = None
+    cookies: Optional[str] = None
+    cookies_from_browser: Optional[str] = None
+    force_ipv4: bool = False
+    geo_bypass: bool = False
+    extractor_args: Optional[str] = None
+    extra_args: list[str] = dataclasses.field(default_factory=list)
+
+    def to_ytdlp_args(self) -> list[str]:
+        """Render to a flat argv fragment, inserted before the URL."""
+        args: list[str] = []
+        if self.proxy:
+            args.extend(["--proxy", self.proxy])
+        if self.cookies:
+            args.extend(["--cookies", self.cookies])
+        if self.cookies_from_browser:
+            args.extend(["--cookies-from-browser", self.cookies_from_browser])
+        if self.force_ipv4:
+            args.append("--force-ipv4")
+        if self.geo_bypass:
+            args.append("--geo-bypass")
+        if self.extractor_args:
+            args.extend(["--extractor-args", self.extractor_args])
+        args.extend(self.extra_args)
+        return args
+
+    def is_empty(self) -> bool:
+        """True when no option is set (no argv fragment to insert)."""
+        return not self.to_ytdlp_args()
+
+
+NO_NETWORK = NetworkOpts()
 
 
 def ensure_yt_dlp() -> None:
@@ -124,7 +177,7 @@ def ensure_whisper() -> bool:
     return command_exists("whisper")
 
 
-def get_video_metadata(url: str) -> dict:
+def get_video_metadata(url: str, network: Optional[NetworkOpts] = None) -> dict:
     """Fetch all video metadata in a single yt-dlp -j call.
 
     Consolidates language detection, title, duration and size into one
@@ -134,7 +187,7 @@ def get_video_metadata(url: str) -> dict:
         title, sanitized_title, duration, size, language.
     """
     result = run(
-        ["yt-dlp", "-j", "-f", "bestaudio", url],
+        ["yt-dlp", "-j", "-f", "bestaudio", *(network or NO_NETWORK).to_ytdlp_args(), url],
         capture=True, check=False, timeout=TIMEOUT_METADATA,
     )
     fallback = {
@@ -197,13 +250,18 @@ def get_video_metadata(url: str) -> dict:
     }
 
 
-def list_subs(url: str) -> None:
+def list_subs(url: str, network: Optional[NetworkOpts] = None) -> None:
     """List available subtitles for the video."""
     info("Available subtitles:")
-    run(["yt-dlp", "--list-subs", url], check=False, timeout=TIMEOUT_LIST_SUBS)
+    run(["yt-dlp", "--list-subs", *(network or NO_NETWORK).to_ytdlp_args(), url],
+        check=False, timeout=TIMEOUT_LIST_SUBS)
 
 
-def resolve_channel_videos(url: str, limit: int = 10) -> tuple[str, list[tuple[str, str, str]]]:
+def resolve_channel_videos(
+    url: str,
+    limit: int = 10,
+    network: Optional[NetworkOpts] = None,
+) -> tuple[str, list[tuple[str, str, str]]]:
     """Resolve a channel URL and return its latest videos.
 
     Returns a tuple of (channel_name, [(date_str, video_id, title), ...]).
@@ -213,8 +271,9 @@ def resolve_channel_videos(url: str, limit: int = 10) -> tuple[str, list[tuple[s
     """
     ensure_yt_dlp()
     info(f"Resolving channel from: {url}")
+    net_args = (network or NO_NETWORK).to_ytdlp_args()
     result = run(
-        ["yt-dlp", "--print", "%(channel_id)s|%(channel)s", "--playlist-items", "1", url],
+        ["yt-dlp", "--print", "%(channel_id)s|%(channel)s", "--playlist-items", "1", *net_args, url],
         capture=True, check=False, quiet=True, timeout=TIMEOUT_METADATA,
     )
     if result.returncode != 0 or not result.stdout.strip():
@@ -237,7 +296,7 @@ def resolve_channel_videos(url: str, limit: int = 10) -> tuple[str, list[tuple[s
         ["yt-dlp", "--playlist-items", f"1-{fetch_limit}",
          "--print", "%(upload_date)s|%(id)s|%(title)s",
          "--no-abort-on-error",
-         playlist_url],
+         *net_args, playlist_url],
         capture=True, check=False, quiet=True, timeout=TIMEOUT_CHANNEL,
     )
     videos: list[tuple[str, str, str]] = []
@@ -255,12 +314,16 @@ def resolve_channel_videos(url: str, limit: int = 10) -> tuple[str, list[tuple[s
     return channel_name, videos[:limit]
 
 
-def list_channel_videos(url: str, limit: int = 10) -> tuple[str, list[tuple[str, str, str]]]:
+def list_channel_videos(
+    url: str,
+    limit: int = 10,
+    network: Optional[NetworkOpts] = None,
+) -> tuple[str, list[tuple[str, str, str]]]:
     """List latest videos from a YouTube channel.
 
     Returns a tuple of (channel_name, [(date_str, video_id, title), ...]).
     """
-    channel_name, videos = resolve_channel_videos(url, limit)
+    channel_name, videos = resolve_channel_videos(url, limit, network=network)
     info("")
     for date_str, vid, title in videos:
         info(f"Date: {date_str} | Title: {title} | URL: https://www.youtube.com/watch?v={vid}")
@@ -275,11 +338,12 @@ def _parse_upload_date(raw: str) -> str:
     return ""
 
 
-def get_video_info(url: str) -> dict:
+def get_video_info(url: str, network: Optional[NetworkOpts] = None) -> dict:
     """Get basic video info."""
     fmt = "%(duration)s|%(filesize_approx)s|%(title)s|%(channel)s|%(upload_date)s"
     result = run(
-        ["yt-dlp", "--print", fmt, "-f", "bestaudio", url],
+        ["yt-dlp", "--print", fmt, "-f", "bestaudio",
+         *(network or NO_NETWORK).to_ytdlp_args(), url],
         capture=True, check=False, timeout=TIMEOUT_METADATA,
     )
     if result.returncode != 0:
@@ -308,6 +372,7 @@ def try_download_subtitle(
     use_auto: bool = False,
     work_dir: Optional[Path] = None,
     try_both: bool = False,
+    network: Optional[NetworkOpts] = None,
 ) -> bool:
     """Attempt to download subtitles. Returns True on success.
 
@@ -331,6 +396,7 @@ def try_download_subtitle(
     else:
         cmd.append("--write-sub")
 
+    cmd.extend((network or NO_NETWORK).to_ytdlp_args())
     cmd.append(url)
 
     result = run(cmd, check=False, capture=True, timeout=TIMEOUT_SUBTITLE)

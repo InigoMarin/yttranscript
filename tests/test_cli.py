@@ -9,6 +9,7 @@ import pytest
 
 from yttranscript.cli import build_parser, main, show_config
 from yttranscript._version import __version__
+from yttranscript.ytdlp import NetworkOpts
 
 
 # --- build_parser ---------------------------------------------------------
@@ -289,7 +290,10 @@ def test_main_latest_calls_list_channel_videos(monkeypatch):
     monkeypatch.setattr("yttranscript.cli.list_channel_videos", mock_list)
     monkeypatch.setattr("sys.argv", ["yttranscript", "https://youtube.com/@chan", "--latest", "5"])
     main()
-    mock_list.assert_called_once_with("https://youtube.com/@chan", 5)
+    mock_list.assert_called_once()
+    args, kwargs = mock_list.call_args
+    assert args[:2] == ("https://youtube.com/@chan", 5)
+    assert isinstance(kwargs.get("network"), NetworkOpts)
 
 
 def test_main_calls_process_video_with_resolved_values(monkeypatch):
@@ -934,3 +938,99 @@ def test_print_models_table_missing_created_shows_question(capsys):
     out = capsys.readouterr().out
     assert "weird" in out
     assert "?" in out
+
+
+# --- network / anti-block options (_resolve_network_opts) ------------------
+
+def _parse_cli_network(argv_extra):
+    """Build parser, parse argv, return resolved NetworkOpts."""
+    from yttranscript.cli import _resolve_network_opts, build_parser
+    parser = build_parser()
+    args = parser.parse_args(["https://youtube.com/watch?v=x", *argv_extra])
+    return _resolve_network_opts(args, {})
+
+
+def test_resolve_network_proxy_from_cli():
+    opts = _parse_cli_network(["--proxy", "socks5://127.0.0.1:1080"])
+    assert opts.proxy == "socks5://127.0.0.1:1080"
+    assert opts.is_empty() is False
+
+
+def test_resolve_network_cookies_and_browser_from_cli():
+    opts = _parse_cli_network(["--cookies", "/tmp/c.txt", "--cookies-from-browser", "firefox"])
+    assert opts.cookies == "/tmp/c.txt"
+    assert opts.cookies_from_browser == "firefox"
+
+
+def test_resolve_network_force_ipv4_and_geo_bypass_from_cli():
+    opts = _parse_cli_network(["--force-ipv4", "--geo-bypass"])
+    assert opts.force_ipv4 is True
+    assert opts.geo_bypass is True
+
+
+def test_resolve_network_extractor_args_from_cli():
+    opts = _parse_cli_network(["--extractor-args", "youtube:player_client=-android"])
+    assert opts.extractor_args == "youtube:player_client=-android"
+
+
+def test_resolve_network_ytdlp_args_cli_string_is_shlex_split():
+    opts = _parse_cli_network(["--ytdlp-args", "--retries 10 --sleep-requests 1"])
+    assert opts.extra_args == ["--retries", "10", "--sleep-requests", "1"]
+
+
+def test_resolve_network_ytdlp_args_preserves_quoted_values():
+    opts = _parse_cli_network(["--ytdlp-args", '--user-agent "Mozilla/5.0"'])
+    assert opts.extra_args == ["--user-agent", "Mozilla/5.0"]
+
+
+def test_resolve_network_cli_overrides_config():
+    """CLI value wins over config value for the same key."""
+    from yttranscript.cli import _resolve_network_opts, build_parser
+    parser = build_parser()
+    args = parser.parse_args(["https://youtube.com/watch?v=x", "--proxy", "http://cli"])
+    config = {"proxy": "http://config"}
+    opts = _resolve_network_opts(args, config)
+    assert opts.proxy == "http://cli"
+
+
+def test_resolve_network_falls_back_to_config():
+    """Config values are used when the CLI flag is absent."""
+    from yttranscript.cli import _resolve_network_opts, build_parser
+    parser = build_parser()
+    args = parser.parse_args(["https://youtube.com/watch?v=x"])
+    config = {
+        "proxy": "http://config",
+        "force_ipv4": True,
+        "ytdlp_args": ["--retries", "5"],
+    }
+    opts = _resolve_network_opts(args, config)
+    assert opts.proxy == "http://config"
+    assert opts.force_ipv4 is True
+    assert opts.extra_args == ["--retries", "5"]
+
+
+def test_resolve_network_defaults_to_empty():
+    """No CLI, no config → all defaults, is_empty() True."""
+    opts = _parse_cli_network([])
+    assert opts.proxy is None
+    assert opts.force_ipv4 is False
+    assert opts.extra_args == []
+    assert opts.is_empty() is True
+
+
+def test_process_video_receives_network_opts_from_cli(monkeypatch):
+    """End-to-end: --proxy on the CLI reaches process_video().network."""
+    mock_pv = MagicMock()
+    monkeypatch.setattr("yttranscript.cli.ensure_config_dir", lambda: None)
+    monkeypatch.setattr("yttranscript.cli.process_video", mock_pv)
+    monkeypatch.setattr("yttranscript.cli.load_config", lambda: {})
+    monkeypatch.setattr("sys.argv", [
+        "yttranscript", "https://youtube.com/watch?v=x",
+        "--proxy", "socks5://127.0.0.1:1080",
+    ])
+    main()
+    mock_pv.assert_called_once()
+    net = mock_pv.call_args.kwargs.get("network")
+    assert isinstance(net, NetworkOpts)
+    assert net.proxy == "socks5://127.0.0.1:1080"
+    assert "--proxy" in net.to_ytdlp_args()

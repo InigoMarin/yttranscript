@@ -11,7 +11,7 @@ from typing import Optional
 from . import log
 from .log import info, success, warn, error, Colors
 from .util import run
-from .ytdlp import get_video_info, ensure_whisper, TIMEOUT_AUDIO_DOWNLOAD
+from .ytdlp import get_video_info, ensure_whisper, TIMEOUT_AUDIO_DOWNLOAD, NetworkOpts, NO_NETWORK
 
 # Whisper transcription can be very slow (hours for `large` on CPU). Use a
 # generous safety net; user can always Ctrl-C.
@@ -31,12 +31,17 @@ def transcribe_with_whisper(
     work_dir: Optional[Path] = None,
     keep_audio_dir: Optional[Path] = None,
     timeout: float = WHISPER_TIMEOUT,
+    network: Optional[NetworkOpts] = None,
 ) -> bool:
     """Download audio and transcribe with Whisper. Returns True on success.
 
     Intermediate files (audio, whisper VTT) are written to `work_dir` when
     given, otherwise to CWD. When `keep_audio` is True and `keep_audio_dir` is
     given, the audio file is moved there (typically the user's CWD).
+
+    `network` is forwarded to the yt-dlp audio download (and any metadata
+    fetch) so the Whisper fallback respects the same proxy/cookies/IPv4
+    options as the subtitle path.
     """
     if not shutil.which("ffmpeg"):
         error(
@@ -49,7 +54,7 @@ def transcribe_with_whisper(
             "  Any system:     pip install imageio-ffmpeg"
         )
         return False
-    info_url = video_info if video_info is not None else get_video_info(url)
+    info_url = video_info if video_info is not None else get_video_info(url, network=network)
     size_mb = info_url["size"] // (1024 * 1024) if info_url["size"] else 0
     duration_min = info_url["duration"] // 60
 
@@ -72,7 +77,7 @@ def transcribe_with_whisper(
     audio_template = str(work_path / f"audio_{output_name}.%(ext)s")
     result = run(
         ["yt-dlp", "-x", "--audio-format", "mp3", "-f", "bestaudio",
-         "--output", audio_template, url],
+         "--output", audio_template, *(network or NO_NETWORK).to_ytdlp_args(), url],
         check=False, quiet=quiet, timeout=TIMEOUT_AUDIO_DOWNLOAD,
     )
     if result.returncode != 0:
